@@ -9,7 +9,7 @@ description = "Attended-only Linux host shell for BeamDesk remote support"
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "screencast", "remote_desktop"] }
 eventsource-stream = "0.2"
 futures-util = "0.3"
-gstreamer = "0.24"
+gstreamer = "0.25"
 gstreamer-sdp = "0.24"
 gstreamer-webrtc = "0.24"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
