@@ -8,6 +8,7 @@ export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", process.env.BEAMDESK_TRUST_PROXY === "true" ? 1 : false);
 app.use((req, res, next) => {
   res.set({
     "Cache-Control": "no-store",
@@ -21,6 +22,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: "16kb" }));
+app.get("/healthz", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "beamdesk-portal",
+    relay: process.env.BEAMDESK_TURN_SHARED_SECRET && configuredTurnUrls().length ? "configured" : "direct-only",
+  });
+});
 app.use(express.static("public"));
 
 const sessions = new Map();

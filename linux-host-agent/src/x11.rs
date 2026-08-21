@@ -201,4 +201,9 @@ mod tests {
         assert_eq!(x11_button("right"), Some(3));
         assert_eq!(x11_button("back"), None);
     }
+
+    #[test]
+    fn inaccessible_x11_display_fails_before_capture_or_input_starts() {
+        assert!(verify_local_display("not-a-local-x11-display").is_err());
+    }
 }

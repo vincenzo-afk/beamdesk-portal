@@ -113,6 +113,22 @@ mod tests {
     }
 
     #[test]
+    fn wayland_never_falls_back_to_x11_even_when_a_display_variable_exists() {
+        let capabilities = detect_capabilities(Some("wayland-0"), Some(":0"), false);
+        assert_eq!(capabilities.display_path, DisplayPath::Unsupported);
+        assert!(!capabilities.can_request_control);
+    }
+
+    #[test]
+    fn x11_is_selected_only_for_an_interactive_non_wayland_desktop() {
+        let capabilities = detect_capabilities(None, Some(":0"), false);
+        assert_eq!(capabilities.display_path, DisplayPath::X11Compatibility);
+        assert!(capabilities.can_request_view);
+        let headless = detect_capabilities(None, None, false);
+        assert_eq!(headless.display_path, DisplayPath::Unsupported);
+    }
+
+    #[test]
     fn control_requires_a_separate_view_approval() {
         let mut state = LocalApprovalState::new();
         state.join();

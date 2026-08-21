@@ -124,6 +124,17 @@ test("the public portal is non-embeddable and does not cache session-bearing res
   assert.match(response.headers.get("strict-transport-security"), /max-age=31536000/);
 });
 
+test("the public readiness endpoint is cache-safe and reveals no credentials", async () => {
+  const response = await fetch(`${base}/healthz`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(body.status, "ok");
+  assert.equal(body.service, "beamdesk-portal");
+  assert.ok(["configured", "direct-only"].includes(body.relay));
+  assert.equal(Object.hasOwn(body, "credential"), false);
+});
+
 test("an authenticated participant can retrieve the complete audit after a terminal session", async () => {
   sessions.clear();
   const created = await api("/api/sessions", { method: "POST" });
@@ -157,6 +168,40 @@ test("TURN credentials are generated only after view approval and expire before 
     assert.deepEqual(ice.body.iceServers[0].urls, process.env.BEAMDESK_TURN_URLS.split(","));
     assert.match(ice.body.iceServers[0].username, /^\d+:[0-9a-f-]+:operator$/);
     assert.ok(ice.body.expiresAt <= sessions.get(created.body.sessionId).expiresAt);
+  } finally {
+    if (oldUrls === undefined) delete process.env.BEAMDESK_TURN_URLS; else process.env.BEAMDESK_TURN_URLS = oldUrls;
+    if (oldSecret === undefined) delete process.env.BEAMDESK_TURN_SHARED_SECRET; else process.env.BEAMDESK_TURN_SHARED_SECRET = oldSecret;
+  }
+});
+
+test("a terminal session rejects renewed approval and TURN access while retaining its protected audit", async () => {
+  sessions.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const headers = { "x-session-token": created.body.token, "content-type": "application/json" };
+  await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers, body: "{}" });
+  const view = await api(`/api/sessions/${created.body.sessionId}/view-request`, { method: "POST", headers });
+  const turn = await api(`/api/sessions/${created.body.sessionId}/ice-config`, { headers });
+  const audit = await api(`/api/sessions/${created.body.sessionId}/audit`, { headers });
+  assert.equal(view.response.status, 404);
+  assert.equal(turn.response.status, 404);
+  assert.equal(audit.response.status, 200);
+});
+
+test("TURN fails closed when its server secret is not configured", async () => {
+  sessions.clear();
+  const oldUrls = process.env.BEAMDESK_TURN_URLS;
+  const oldSecret = process.env.BEAMDESK_TURN_SHARED_SECRET;
+  process.env.BEAMDESK_TURN_URLS = "turn:relay.example.test:3478";
+  delete process.env.BEAMDESK_TURN_SHARED_SECRET;
+  try {
+    const created = await api("/api/sessions", { method: "POST" });
+    const operatorHeaders = { "x-session-token": created.body.token, "content-type": "application/json" };
+    const joined = await api("/api/sessions/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: created.body.code }) });
+    const hostHeaders = { "x-session-token": joined.body.token, "content-type": "application/json" };
+    await api(`/api/sessions/${created.body.sessionId}/view-request`, { method: "POST", headers: operatorHeaders });
+    await api(`/api/sessions/${created.body.sessionId}/host-action`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ action: "approve-view" }) });
+    const turn = await api(`/api/sessions/${created.body.sessionId}/ice-config`, { headers: operatorHeaders });
+    assert.equal(turn.response.status, 503);
   } finally {
     if (oldUrls === undefined) delete process.env.BEAMDESK_TURN_URLS; else process.env.BEAMDESK_TURN_URLS = oldUrls;
     if (oldSecret === undefined) delete process.env.BEAMDESK_TURN_SHARED_SECRET; else process.env.BEAMDESK_TURN_SHARED_SECRET = oldSecret;

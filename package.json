@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "RUN_PORTAL_SERVER=true node server.mjs",
     "start": "RUN_PORTAL_SERVER=true node server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "express": "^4.21.2"
