@@ -10,6 +10,7 @@ use beamdesk_linux_host::{
     input::PortalInputController,
     media::NativeWebRtcSender,
     portal::{PortalClient, PortalEvent},
+    x11::{verify_local_display, X11InputController},
     DisplayPath,
     LocalApprovalState,
 };
@@ -20,6 +21,11 @@ struct RunConfig {
     portal_url: String,
     session_id: String,
     session_token: String,
+}
+
+enum ActiveInput {
+    Portal(PortalInputController),
+    X11(X11InputController),
 }
 
 fn run_config_from_env() -> Result<RunConfig, &'static str> {
@@ -60,8 +66,8 @@ async fn main() {
     println!("Display path: {:?}", capabilities.display_path);
     println!("{}", capabilities.explanation);
 
-    if capabilities.display_path != DisplayPath::WaylandPortal {
-        eprintln!("This Linux runtime is Wayland-only. It will not fall back to a raw capture or input API.");
+    if capabilities.display_path == DisplayPath::Unsupported {
+        eprintln!("This Linux desktop cannot provide BeamDesk’s attended capture and control requirements.");
         std::process::exit(2);
     }
 
@@ -88,20 +94,34 @@ async fn main() {
         }
     };
 
-    // The source picker must complete before the server-side view approval. If the
-    // picker is cancelled, the operator never receives an active media path.
-    let capture = match request_wayland_capture(&approval).await {
-        Ok(capture) => capture,
-        Err(error) => {
-            eprintln!("Display selection was not completed: {error}");
-            return;
+    // The compositor picker or local X11 display check must complete before the
+    // server-side view approval. If preparation fails, no video is activated.
+    let mut wayland_capture = None;
+    let x11_display = match capabilities.display_path {
+        DisplayPath::WaylandPortal => {
+            match request_wayland_capture(&approval).await {
+                Ok(capture) => wayland_capture = Some(capture),
+                Err(error) => {
+                    eprintln!("Display selection was not completed: {error}");
+                    return;
+                }
+            }
+            None
         }
+        DisplayPath::X11Compatibility => {
+            let display = match env::var("DISPLAY") {
+                Ok(display) if !display.is_empty() => display,
+                _ => { eprintln!("No local X11 DISPLAY is available for attended capture."); return; }
+            };
+            if let Err(error) = verify_local_display(&display) {
+                eprintln!("The local X11 display cannot be used for BeamDesk capture: {error}");
+                return;
+            }
+            println!("X11 compatibility mode will share the locally inherited display only.");
+            Some(display)
+        }
+        DisplayPath::Unsupported => unreachable!(),
     };
-
-    if let Err(error) = portal.send_host_action(&config.session_id, &config.session_token, "approve-view").await {
-        eprintln!("The view approval was not accepted by the current BeamDesk session: {error}");
-        return;
-    }
 
     let mut inbound = match portal.subscribe_events(&config.session_id, &config.session_token).await {
         Ok(stream) => stream,
@@ -118,7 +138,12 @@ async fn main() {
             Vec::new()
         }
     };
-    let sender = match NativeWebRtcSender::start(&capture, outbound_tx, &turn_servers) {
+    let sender_result = match capabilities.display_path {
+        DisplayPath::WaylandPortal => NativeWebRtcSender::start(wayland_capture.as_ref().expect("The approved Wayland capture is retained."), outbound_tx, &turn_servers),
+        DisplayPath::X11Compatibility => NativeWebRtcSender::start_x11(x11_display.as_deref().expect("The validated local X11 display is retained."), outbound_tx, &turn_servers),
+        DisplayPath::Unsupported => unreachable!(),
+    };
+    let sender = match sender_result {
         Ok(sender) => sender,
         Err(error) => {
             eprintln!("The local encrypted media sender could not start: {error}");
@@ -126,10 +151,16 @@ async fn main() {
         }
     };
 
+    if let Err(error) = portal.send_host_action(&config.session_id, &config.session_token, "approve-view").await {
+        let _ = sender.stop();
+        eprintln!("The view approval was not accepted by the current BeamDesk session: {error}");
+        return;
+    }
+
     println!("Display sharing is active. Keep this terminal open; closing it revokes the local capture source.");
     let glib_context = gstreamer::glib::MainContext::default();
     let mut glib_tick = tokio::time::interval(Duration::from_millis(10));
-    let mut input: Option<PortalInputController> = None;
+    let mut input: Option<ActiveInput> = None;
     let mut control_prompted = false;
 
     loop {
@@ -145,13 +176,17 @@ async fn main() {
                     }
                 }
                 Ok(PortalEvent::Input(envelope)) => {
-                    if let Some(controller) = input.as_mut() {
-                        if let Err(error) = controller.apply(envelope).await {
-                            eprintln!("A validated remote-control event was not injected: {error}");
-                            break;
+                    let result = match input.as_mut() {
+                        Some(ActiveInput::Portal(controller)) => controller.apply(envelope).await.map_err(|error| error.to_string()),
+                        Some(ActiveInput::X11(controller)) => controller.apply(envelope).map_err(|error| error.to_string()),
+                        None => {
+                            eprintln!("An input event arrived without a local control grant and was ignored.");
+                            continue;
                         }
-                    } else {
-                        eprintln!("An input event arrived without a local portal control grant and was ignored.");
+                    };
+                    if let Err(error) = result {
+                        eprintln!("A validated remote-control event was not injected: {error}");
+                        break;
                     }
                 }
                 Ok(PortalEvent::Session(session)) => {
@@ -174,7 +209,12 @@ async fn main() {
                             let _ = portal.send_host_action(&config.session_id, &config.session_token, "deny-control").await;
                             continue;
                         }
-                        match PortalInputController::request(&approval).await {
+                        let requested_input = match capabilities.display_path {
+                            DisplayPath::WaylandPortal => PortalInputController::request(&approval).await.map(ActiveInput::Portal).map_err(|error| error.to_string()),
+                            DisplayPath::X11Compatibility => X11InputController::connect(x11_display.as_deref().expect("The validated local X11 display is retained."), &approval).map(ActiveInput::X11).map_err(|error| error.to_string()),
+                            DisplayPath::Unsupported => unreachable!(),
+                        };
+                        match requested_input {
                             Ok(controller) => {
                                 if let Err(error) = portal.send_host_action(&config.session_id, &config.session_token, "approve-control").await {
                                     approval.revoke_control();
@@ -187,7 +227,7 @@ async fn main() {
                             Err(error) => {
                                 approval.revoke_control();
                                 let _ = portal.send_host_action(&config.session_id, &config.session_token, "deny-control").await;
-                                eprintln!("The desktop portal did not approve remote control: {error}");
+                                eprintln!("The local desktop did not approve remote control: {error}");
                             }
                         }
                     }

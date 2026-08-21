@@ -47,13 +47,8 @@ pub fn sender_pipeline_description(pipewire_fd: i32, pipewire_node_id: u32) -> S
     ), pipewire_fd = pipewire_fd, pipewire_node_id = pipewire_node_id)
 }
 
-fn construct_sender_pipeline(pipewire_fd: i32, pipewire_node_id: u32) -> Result<(gst::Pipeline, gst::Element), MediaError> {
+fn construct_sender_pipeline_with_source(source: gst::Element) -> Result<(gst::Pipeline, gst::Element), MediaError> {
     let pipeline = gst::Pipeline::new();
-    let pipewire = gst::ElementFactory::make("pipewiresrc").name("beamdeskpipewire").build()
-        .map_err(|error| MediaError::Pipeline(error.to_string()))?;
-    pipewire.set_property("fd", pipewire_fd);
-    pipewire.set_property("path", pipewire_node_id.to_string());
-    pipewire.set_property("do-timestamp", true);
     let queue_in = gst::ElementFactory::make("queue").name("beamdeskqueuein").build()
         .map_err(|error| MediaError::Pipeline(error.to_string()))?;
     queue_in.set_property("max-size-buffers", 2u32);
@@ -83,9 +78,9 @@ fn construct_sender_pipeline(pipewire_fd: i32, pipewire_node_id: u32) -> Result<
         .map_err(|error| MediaError::Pipeline(error.to_string()))?;
     webrtcbin.set_property_from_str("bundle-policy", "max-bundle");
 
-    pipeline.add_many([&pipewire, &queue_in, &convert, &scale, &caps_filter, &encoder, &payloader, &queue_out, &webrtcbin])
+    pipeline.add_many([&source, &queue_in, &convert, &scale, &caps_filter, &encoder, &payloader, &queue_out, &webrtcbin])
         .map_err(|error| MediaError::Pipeline(error.to_string()))?;
-    gst::Element::link_many([&pipewire, &queue_in, &convert, &scale, &caps_filter, &encoder, &payloader, &queue_out])
+    gst::Element::link_many([&source, &queue_in, &convert, &scale, &caps_filter, &encoder, &payloader, &queue_out])
         .map_err(|error| MediaError::Pipeline(error.to_string()))?;
     let queue_src = queue_out.static_pad("src").ok_or_else(|| MediaError::Pipeline("The RTP queue has no source pad.".to_string()))?;
     let webrtc_sink = webrtcbin.request_pad_simple("sink_%u")
@@ -93,6 +88,27 @@ fn construct_sender_pipeline(pipewire_fd: i32, pipewire_node_id: u32) -> Result<
     queue_src.link(&webrtc_sink).map_err(|error| MediaError::Pipeline(error.to_string()))?;
 
     Ok((pipeline, webrtcbin))
+}
+
+fn construct_sender_pipeline(pipewire_fd: i32, pipewire_node_id: u32) -> Result<(gst::Pipeline, gst::Element), MediaError> {
+    let pipewire = gst::ElementFactory::make("pipewiresrc").name("beamdeskpipewire").build()
+        .map_err(|error| MediaError::Pipeline(error.to_string()))?;
+    pipewire.set_property("fd", pipewire_fd);
+    pipewire.set_property("path", pipewire_node_id.to_string());
+    pipewire.set_property("do-timestamp", true);
+    construct_sender_pipeline_with_source(pipewire)
+}
+
+/// X11 is an explicit compatibility source. Callers must first verify the local
+/// interactive display and must never pass an operator-provided display name.
+fn construct_x11_sender_pipeline(local_display: &str) -> Result<(gst::Pipeline, gst::Element), MediaError> {
+    let ximage = gst::ElementFactory::make("ximagesrc").name("beamdeskx11").build()
+        .map_err(|error| MediaError::Pipeline(error.to_string()))?;
+    ximage.set_property("display-name", local_display);
+    ximage.set_property("show-pointer", true);
+    ximage.set_property("use-damage", true);
+    ximage.set_property("do-timestamp", true);
+    construct_sender_pipeline_with_source(ximage)
 }
 
 /// Owns the active GStreamer graph. Dropping it moves the graph to `Null`, which
@@ -107,6 +123,19 @@ impl NativeWebRtcSender {
     pub fn start(capture: &PortalCapture, outbound: mpsc::UnboundedSender<OutboundSignal>, turn_servers: &[TurnServer]) -> Result<Self, MediaError> {
         gst::init().map_err(|error| MediaError::Initialize(error.to_string()))?;
         let (pipeline, webrtcbin) = construct_sender_pipeline(capture.pipewire_fd(), capture.pipewire_node_id())?;
+        Self::start_from_pipeline(pipeline, webrtcbin, outbound, turn_servers)
+    }
+
+    /// Starts a compatibility X11 source after the caller has completed the same
+    /// local view approval used by Wayland. This function does not probe or open a
+    /// display by itself; the host’s X11 adapter owns that safety check.
+    pub fn start_x11(local_display: &str, outbound: mpsc::UnboundedSender<OutboundSignal>, turn_servers: &[TurnServer]) -> Result<Self, MediaError> {
+        gst::init().map_err(|error| MediaError::Initialize(error.to_string()))?;
+        let (pipeline, webrtcbin) = construct_x11_sender_pipeline(local_display)?;
+        Self::start_from_pipeline(pipeline, webrtcbin, outbound, turn_servers)
+    }
+
+    fn start_from_pipeline(pipeline: gst::Pipeline, webrtcbin: gst::Element, outbound: mpsc::UnboundedSender<OutboundSignal>, turn_servers: &[TurnServer]) -> Result<Self, MediaError> {
         for server in turn_servers {
             if !webrtcbin.emit_by_name::<bool>("add-turn-server", &[&server.uri]) {
                 return Err(MediaError::TurnServer);
@@ -209,6 +238,14 @@ mod tests {
     fn pipeline_constructs_with_the_installed_native_media_plugins() {
         gst::init().unwrap();
         let (pipeline, _) = construct_sender_pipeline(42, 917).unwrap();
+        assert!(pipeline.by_name("beamdeskwebrtc").is_some());
+    }
+
+    #[test]
+    fn x11_compatibility_pipeline_constructs_without_opening_a_display() {
+        gst::init().unwrap();
+        let (pipeline, _) = construct_x11_sender_pipeline(":99").unwrap();
+        assert!(pipeline.by_name("beamdeskx11").is_some());
         assert!(pipeline.by_name("beamdeskwebrtc").is_some());
     }
 

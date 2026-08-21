@@ -5,6 +5,7 @@ pub mod capture;
 pub mod input;
 pub mod media;
 pub mod portal;
+pub mod x11;
 
 use serde::Serialize;
 
