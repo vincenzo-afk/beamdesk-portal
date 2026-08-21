@@ -1,0 +1,19 @@
+---
+services:
+  - type: web
+    name: beamdesk-portal
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: pnpm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: BEAMDESK_TRUST_PROXY
+        value: "true"
+      - key: BEAMDESK_TURN_URLS
+        sync: false
+      - key: BEAMDESK_TURN_SHARED_SECRET
+        sync: false
+      - key: BEAMDESK_TURN_HMAC_ALGORITHM
+        value: sha1
