@@ -8,7 +8,7 @@ BeamDesk is designed for **attended support**, not silent device administration.
 |---|---|---|---|---|
 | Windows 10/11 desktop | Windows Graphics Capture after `GraphicsCaptureSession.IsSupported()` and the system picker | `SendInput` only after the separate control approval | BeamDesk view prompt, Windows picker, then a distinct BeamDesk control prompt | WPF approval shell exists; capture and input adapter require a Windows build machine |
 | Linux Wayland with a ScreenCast and RemoteDesktop portal | XDG ScreenCast portal → PipeWire → GStreamer WebRTC | XDG RemoteDesktop portal device grant | Terminal/app confirmation, compositor source picker, then compositor keyboard/pointer dialog | Native Rust capture, signaling, and portal input foundation implemented; requires a real supported desktop session for validation |
-| Linux X11 with capture and XTEST extensions | GStreamer `ximagesrc` → GStreamer WebRTC | XTEST input synthesis | Visible BeamDesk host prompt for view and a separate control prompt | Planned adapter; it must verify the active X display and extensions before enabling either capability |
+| Linux X11 with capture and XTEST extensions | GStreamer `ximagesrc` → GStreamer WebRTC | XTEST input synthesis | Visible BeamDesk host prompt for view and a separate control prompt | Native Rust compatibility foundation implemented; it verifies the active X display and extensions before enabling either capability and still requires real-session validation |
 | Headless Linux, unsupported compositor, missing portal/backend, or missing X11 extensions | None | None | Not applicable | Must fail closed with an actionable compatibility message |
 
 ## Windows policy

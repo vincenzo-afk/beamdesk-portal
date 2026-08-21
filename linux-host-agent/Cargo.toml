@@ -2,7 +2,7 @@
 name = "beamdesk-linux-host"
 version = "0.1.0"
 edition = "2021"
-license = "Proprietary"
+license = "MIT"
 description = "Attended-only Linux host shell for BeamDesk remote support"
 
 [dependencies]

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  portal:
+    name: Portal tests and smoke check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install portal dependencies
+        run: corepack enable && pnpm install --frozen-lockfile
+      - name: Run portal regression tests
+        run: pnpm test
+      - name: Run portal health smoke check
+        run: |
+          pnpm start > /tmp/beamdesk-portal.log 2>&1 &
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:4173/healthz > /dev/null; then break; fi
+            sleep 1
+          done
+          BEAMDESK_SMOKE_URL=http://127.0.0.1:4173/ pnpm smoke
+
+  linux-host:
+    name: Linux host tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install native media dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpipewire-0.3-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-nice
+      - name: Install current stable Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Run Linux host tests
+        working-directory: linux-host-agent
+        run: cargo test
