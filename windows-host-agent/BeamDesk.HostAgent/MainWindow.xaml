@@ -1,0 +1,32 @@
+<Window x:Class="BeamDesk.HostAgent.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="BeamDesk Host" Width="540" Height="620" WindowStartupLocation="CenterScreen" Background="#07101D" Foreground="{StaticResource Ink}">
+  <Grid Margin="28">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="BEAMDESK" Foreground="{StaticResource Accent}" FontWeight="Bold" FontSize="12" LetterSpacing="2" />
+      <TextBlock Text="Windows support needs your approval." FontSize="28" FontWeight="Bold" Margin="0,9,0,6" TextWrapping="Wrap" />
+      <TextBlock Text="Enter the code shared by the support person. No screen is shared and no remote input is accepted until you approve a local request below." Foreground="#B9CBD9" TextWrapping="Wrap" />
+    </StackPanel>
+    <Border Grid.Row="1" Margin="0,24,0,0" Padding="16" CornerRadius="8" Background="{StaticResource Panel}">
+      <StackPanel>
+        <TextBlock Text="SUPPORT CODE" FontWeight="Bold" FontSize="11" Foreground="#91B9C4" />
+        <DockPanel Margin="0,8,0,0"><Button x:Name="JoinButton" Content="Join support session" DockPanel.Dock="Right" Click="JoinButton_Click" Margin="10,0,0,0" /><TextBox x:Name="CodeInput" FontSize="16" Padding="10" VerticalContentAlignment="Center" CharacterCasing="Upper" /></DockPanel>
+      </StackPanel>
+    </Border>
+    <Border Grid.Row="2" Margin="0,18,0,0" Padding="18" CornerRadius="8" Background="#0C1B2B" BorderBrush="#2D536A" BorderThickness="1">
+      <StackPanel>
+        <TextBlock Text="SESSION STATUS" FontWeight="Bold" FontSize="11" Foreground="#91B9C4" />
+        <TextBlock x:Name="StatusTitle" Text="Not connected" FontSize="22" FontWeight="Bold" Margin="0,9,0,4" />
+        <TextBlock x:Name="StatusDetail" Text="This agent is attended-support only." Foreground="#C1D0DC" TextWrapping="Wrap" />
+        <Border x:Name="ViewPrompt" Visibility="Collapsed" Margin="0,22,0,0" Padding="14" Background="#173A47" BorderBrush="#70DDCF" BorderThickness="1"><StackPanel><TextBlock Text="Screen-sharing request" FontWeight="Bold" FontSize="17" /><TextBlock Text="The support person is asking to see a display. Choose the display through Windows' picker in the next feature; this approval does not permit keyboard or mouse control." TextWrapping="Wrap" Margin="0,6,0,0" /><StackPanel Orientation="Horizontal"><Button Content="Approve screen view" Background="{StaticResource Accent}" Foreground="#06202A" Click="ApproveView_Click" /><Button Content="Decline" Margin="10,8,0,0" Click="DenyView_Click" /></StackPanel></StackPanel></Border>
+        <Border x:Name="ControlPrompt" Visibility="Collapsed" Margin="0,12,0,0" Padding="14" Background="#482D29" BorderBrush="#FFAC93" BorderThickness="1"><StackPanel><TextBlock Text="Remote-control request" FontWeight="Bold" FontSize="17" /><TextBlock Text="Approving this will later allow the support person to send keyboard and mouse input to your active Windows desktop. You can pause control or end the session at any time." TextWrapping="Wrap" Margin="0,6,0,0" /><StackPanel Orientation="Horizontal"><Button Content="Approve remote control" Background="#FFB59E" Foreground="#35100B" Click="ApproveControl_Click" /><Button Content="Keep view only" Margin="10,8,0,0" Click="DenyControl_Click" /></StackPanel></StackPanel></Border>
+        <Border x:Name="ActiveBanner" Visibility="Collapsed" Margin="0,20,0,0" Padding="12" Background="#174737"><TextBlock x:Name="ActiveBannerText" Text="REMOTE SUPPORT ACTIVE — You remain in control." FontWeight="Bold" TextWrapping="Wrap" /></Border>
+      </StackPanel>
+    </Border>
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"><Button x:Name="PauseButton" Content="Pause remote control" Visibility="Collapsed" Click="PauseButton_Click" /><Button x:Name="EndButton" Content="End session" Background="#2A4257" Foreground="White" Margin="10,8,0,0" Click="EndButton_Click" /></StackPanel>
+  </Grid>
+</Window>

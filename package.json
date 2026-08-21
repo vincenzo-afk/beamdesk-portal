@@ -1,0 +1,14 @@
+{
+  "name": "beamdesk-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "RUN_PORTAL_SERVER=true node server.mjs",
+    "start": "RUN_PORTAL_SERVER=true node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

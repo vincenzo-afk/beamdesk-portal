@@ -1,0 +1,12 @@
+<Application x:Class="BeamDesk.HostAgent.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="Ink" Color="#F5F8FC" />
+    <SolidColorBrush x:Key="Panel" Color="#112437" />
+    <SolidColorBrush x:Key="Accent" Color="#70DDCF" />
+    <Style TargetType="Button">
+      <Setter Property="Margin" Value="0,8,0,0" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </Application.Resources>
+</Application>
