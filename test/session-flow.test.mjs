@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, closeSubscribers, eventTokens, expireSession, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, closeSubscribers, eventTokens, expireSession, pruneRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
 
 let server;
 let base;
@@ -68,6 +68,15 @@ test("session-event heartbeat resources are cleared when the session closes", ()
   assert.equal(subscriber.heartbeatTimer, null);
   assert.equal(ended, true);
   assert.equal(session.subscribers.size, 0);
+});
+
+test("expired network rate windows are pruned instead of accumulating in portal memory", () => {
+  rateWindows.clear();
+  rateWindows.set("expired-network", { startedAt: 0, requests: 1 });
+  rateWindows.set("active-network", { startedAt: 119_000, requests: 2 });
+  assert.equal(pruneRateWindows(120_001), 1);
+  assert.equal(rateWindows.has("expired-network"), false);
+  assert.equal(rateWindows.has("active-network"), true);
 });
 
 test("opaque WebRTC signals are refused before view approval and accepted only for an active consented session", async () => {

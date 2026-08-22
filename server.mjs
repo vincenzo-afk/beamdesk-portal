@@ -6,6 +6,8 @@ export const TURN_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
 export const TERMINAL_SESSION_RETENTION_MS = 60 * 60 * 1000;
 export const EVENT_HEARTBEAT_MS = 25_000;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
+export const RATE_WINDOW_MS = 60_000;
+export const RATE_WINDOW_RETENTION_MS = 2 * RATE_WINDOW_MS;
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const app = express();
@@ -221,11 +223,23 @@ function requireAuditSession(req, res) {
   return { session, role };
 }
 
+export function pruneRateWindows(now = Date.now()) {
+  let pruned = 0;
+  for (const [key, window] of rateWindows.entries()) {
+    if (now - window.startedAt > RATE_WINDOW_RETENTION_MS) {
+      rateWindows.delete(key);
+      pruned += 1;
+    }
+  }
+  return pruned;
+}
+
 function rateLimited(req) {
   const key = req.ip || "unknown";
   const now = Date.now();
+  pruneRateWindows(now);
   const window = rateWindows.get(key) || { startedAt: now, requests: 0 };
-  if (now - window.startedAt > 60_000) {
+  if (now - window.startedAt > RATE_WINDOW_MS) {
     window.startedAt = now;
     window.requests = 0;
   }
