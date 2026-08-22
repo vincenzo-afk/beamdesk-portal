@@ -41,6 +41,8 @@
 | Independent portal failure-path probe | A fresh in-process probe covered health headers, malformed JSON, safe API misses, case-insensitive code join, terminal SSE closure, terminal credential rejection, and expired event-credential retention. | Passed locally. Expired event credentials remained bounded when a new live-event credential was issued. |
 | Browser terminal-event recovery | A browser operator session was ended by a distinct host session over SSE. | Passed locally. The browser cleared media, credentials, subscriptions, and stale chat/end controls, then returned to the safe home screen with an explanatory message and no console error. |
 | Additional Linux refusal paths | Release-host probes covered no interactive display, unavailable Wayland portal, TCP-style X11 display, and an unavailable local X11 display. | Passed locally. Every refusal exited with code 2 before capture, input, or normal portal activity. |
+| Clean-runnable local pass | A fresh portal completed create → host join → chat → view approval → control approval → host revoke → operator end; portal syntax, 28 regression tests, production dependency audit, health, smoke, Linux unit tests, strict lint, release build, GStreamer prerequisites, and refusal paths were re-run. | Passed locally. No new reproducible source defect or uncommitted source change was found. |
+| Master CI confirmation | GitHub Actions run `32576666460` for `3ac570925387c0f1c6602f02ce8f0854c79d1ccf` completed the portal and Linux-host jobs successfully. | Passed remotely for the current committed source. |
 
 ## Defects found and corrected
 
@@ -49,7 +51,7 @@
 | A JSON body over the 16 KiB limit returned a generic HTTP 500 response. | The error handler now returns cache-safe JSON with HTTP 413 and no framework details. | `oversized JSON requests receive a safe 413 response instead of an internal error`. |
 | Strict Linux linting rejected `LocalApprovalState::new` without `Default`. | Added the equivalent `Default` implementation. | `cargo clippy --all-targets -- -D warnings`. |
 | Strict Linux linting flagged an oversized `ActiveInput` enum variant. | Boxed the X11 controller variant without changing the attended control flow. | `cargo clippy --all-targets -- -D warnings` and all Linux tests. |
-| CI did not check browser JavaScript syntax, strict Rust linting, or a release build. | CI now runs both JavaScript syntax checks, strict Rust linting, and a release compile; actions were updated to their Node 24-compatible major releases. | Local equivalents passed. A post-push workflow dispatch was attempted and GitHub returned HTTP 422 because Actions is disabled for the repository owner. |
+| CI did not check browser JavaScript syntax, strict Rust linting, or a release build. | CI now runs both JavaScript syntax checks, strict Rust linting, and a release compile; actions were updated to their Node 24-compatible major releases. | Local equivalents passed. The initial dispatch blocker was later cleared; GitHub Actions run `32576666460` succeeded for commit `3ac5709`. |
 | Render instructions referred to a private repository and did not state the single-process state constraint. | Documentation now uses repository-neutral access wording and records that the current in-memory portal must remain single-instance. | Documentation review. |
 | Unknown `/api/*` routes fell through to Express’ HTML 404 page. | Added a scoped JSON API fallback that preserves the portal security headers. | `unknown API routes return a safe JSON response with portal security headers`. |
 | An invalid TURN HMAC algorithm threw an unhandled exception and reported a configured relay in health checks. | TURN capability now validates HMAC construction first and fails closed to the existing direct-only 503 path. | `invalid TURN HMAC configuration fails closed without producing a server error`. |
@@ -77,7 +79,6 @@ The following items are not defects in the local test results; they are **enviro
 | Two real devices and a public portal | Exercise complete offer/answer/ICE exchange, view/control approval, input delivery, chat, disconnect recovery, and terminal teardown. |
 | Persistent CoTURN host | Validate authenticated relay credentials and relay-only WebRTC over the planned UDP/TCP/TLS endpoints. |
 | Render account connected to the repository | Deploy the Blueprint, set protected TURN variables only after CoTURN validation, and run `pnpm smoke` against the deployment. |
-| GitHub Actions run on `master` | Confirm the updated portal and Linux CI jobs complete successfully before enabling required status checks or branch protection. |
 
 ## Reproduction commands
 
