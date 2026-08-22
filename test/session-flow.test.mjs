@@ -13,6 +13,15 @@ test.before(async () => {
 
 test.after(() => server.close());
 
+test.beforeEach(() => {
+  sessions.clear();
+  eventTokens.clear();
+  eventTokenWindows.clear();
+  rateWindows.clear();
+  chatWindows.clear();
+  abuseReports.length = 0;
+});
+
 async function api(path, options = {}) {
   const response = await fetch(`${base}${path}`, options);
   return { response, body: await response.json() };
@@ -147,6 +156,27 @@ test("ending or expiring a session invalidates its live event credentials and bl
   const session = sessions.get(replacement.body.sessionId);
   expireSession(session, session.expiresAt);
   assert.equal(session.state, "EXPIRED");
+});
+
+test("joining an expired code performs terminal cleanup before refusing the code", async () => {
+  sessions.clear();
+  eventTokens.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const session = sessions.get(created.body.sessionId);
+  const grant = await api(`/api/sessions/${created.body.sessionId}/event-token`, {
+    method: "POST",
+    headers: { "x-session-token": created.body.token },
+  });
+  session.expiresAt = Date.now() - 1;
+  const joined = await api("/api/sessions/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: created.body.code }),
+  });
+  assert.equal(joined.response.status, 400);
+  assert.equal(session.state, "EXPIRED");
+  assert.equal(eventTokens.has(grant.body.accessToken), false);
+  assert.ok(session.purgeTimer);
 });
 
 test("terminal audit records are retained briefly then purged from portal memory", async () => {
@@ -320,6 +350,7 @@ test("session chat is role-scoped, live-delivered, bounded, rate-limited, and re
   assert.equal(beforeJoin.response.status, 409);
 
   const joined = await api("/api/sessions/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: created.body.code }) });
+  assert.equal(joined.response.status, 200);
   const hostHeaders = { "x-session-token": joined.body.token, "content-type": "application/json" };
   const session = sessions.get(created.body.sessionId);
   const liveEvents = [];

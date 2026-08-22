@@ -423,7 +423,12 @@ app.post("/api/sessions/join", (req, res) => {
   if (rateLimited(req)) return sendRateLimit(res, "Please wait before trying another code.", 60);
   const code = String(req.body?.code || "");
   const session = findSessionByCode(code);
-  if (!session || session.expiresAt <= Date.now() || session.state !== "CREATED") return res.status(400).json({ error: "This support code is invalid, already used, or expired." });
+  if (!session) return res.status(400).json({ error: "This support code is invalid, already used, or expired." });
+  if (session.expiresAt <= Date.now()) {
+    expireSession(session);
+    return res.status(400).json({ error: "This support code is invalid, already used, or expired." });
+  }
+  if (session.state !== "CREATED") return res.status(400).json({ error: "This support code is invalid, already used, or expired." });
   session.hostToken = makeToken();
   transition(session, "HOST_JOINED", "HOST_JOINED", "host");
   return res.json({ sessionId: session.id, token: session.hostToken, state: session.state, expiresAt: session.expiresAt });

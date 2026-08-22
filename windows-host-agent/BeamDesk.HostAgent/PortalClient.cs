@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace BeamDesk.HostAgent;
 
@@ -40,12 +41,27 @@ public sealed class PortalClient
     private static async Task EnsureSuccess(HttpResponseMessage response)
     {
         if (response.IsSuccessStatusCode) return;
-        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-        throw new InvalidOperationException(error?.Error ?? $"Portal request failed ({(int)response.StatusCode}).");
+        var message = $"Portal request failed ({(int)response.StatusCode}).";
+        try
+        {
+            var raw = await response.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                var error = JsonSerializer.Deserialize<ErrorResponse>(raw);
+                if (!string.IsNullOrWhiteSpace(error?.Error)) message = error.Error;
+            }
+        }
+        catch (JsonException) { }
+        throw new PortalRequestException((int)response.StatusCode, message);
     }
 
     private sealed record JoinResponse(string SessionId, string Token);
     private sealed record ErrorResponse(string Error);
+}
+
+public sealed class PortalRequestException(int statusCode, string message) : InvalidOperationException(message)
+{
+    public int StatusCode { get; } = statusCode;
 }
 
 public sealed record JoinedSession(string SessionId, string Token);

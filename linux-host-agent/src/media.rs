@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
-use crate::{capture::PortalCapture, portal::{SignalKind, TurnServer}};
+use crate::{capture::PortalCapture, portal::{SignalKind, TurnServer}, x11::is_local_display_name};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboundSignal {
@@ -32,6 +32,8 @@ pub enum MediaError {
     Sdp(String),
     #[error("The WebRTC media sender has already stopped.")]
     Stopped,
+    #[error("BeamDesk refuses a non-local X11 display name for compatibility capture.")]
+    NonLocalX11Display,
 }
 
 /// Build the media graph from numeric values only; neither an SDP nor a portal
@@ -130,6 +132,9 @@ impl NativeWebRtcSender {
     /// local view approval used by Wayland. This function does not probe or open a
     /// display by itself; the host’s X11 adapter owns that safety check.
     pub fn start_x11(local_display: &str, outbound: mpsc::UnboundedSender<OutboundSignal>, turn_servers: &[TurnServer]) -> Result<Self, MediaError> {
+        if !is_local_display_name(local_display) {
+            return Err(MediaError::NonLocalX11Display);
+        }
         gst::init().map_err(|error| MediaError::Initialize(error.to_string()))?;
         let (pipeline, webrtcbin) = construct_x11_sender_pipeline(local_display)?;
         Self::start_from_pipeline(pipeline, webrtcbin, outbound, turn_servers)

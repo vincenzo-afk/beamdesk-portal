@@ -8,7 +8,7 @@
 
 | Area | Evidence run | Result | Meaning |
 |---|---|---|---|
-| Portal protocol and safety | `pnpm test` | 25 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, TURN credential routes, safe API misses, replayed event credentials, and bounded audit records passed local regression coverage. |
+| Portal protocol and safety | `pnpm test` | 26 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, TURN credential routes, safe API misses, replayed event credentials, expired-code cleanup, and bounded audit records passed local regression coverage. |
 | Browser session UI | Local browser session: create code, join host, send chat | Passed | The UI hid chat before host join, enabled it after join, submitted a message, rendered the transcript, and produced no client-side console error. |
 | Portal operational checks | Syntax checks, fresh `/healthz`, `pnpm smoke`, direct HTTP payload probe | Passed | The start path, readiness endpoint, direct-only fallback, and safe oversized-payload response were verified against a fresh local process. |
 | Production JavaScript dependency audit | `pnpm audit --prod` | No known vulnerabilities reported | The installed production dependency graph had no advisory reported by the package registry at audit time. |
@@ -34,6 +34,7 @@
 | TURN credential boundary | Tests cover pre-view denial, short-lived configured credentials, terminal rejection, and absent-secret failure. | Passed locally; no relay was provisioned. |
 | Linux attended policy | Tests cover Wayland portal refusal without a portal, X11 selection rules, local approval guards, and static media graphs. | Passed locally; no compositor was available. |
 | Windows attended policy | Source contains a fail-closed WPF compatibility preflight only. | **Not validated:** no Windows folder or .NET desktop environment is currently connected. |
+| Final consent lifecycle in the browser | A clean local session was created, joined by a host, approved for viewing, separately approved for control, revoked back to view-only, and ended through the operator UI. | Passed locally. The browser immediately reflected every consent transition and removed the session UI after termination. |
 
 ## Defects found and corrected
 
@@ -49,6 +50,12 @@
 | Repeated TURN credential reads could retain 257 audit entries rather than the stated bound. | Centralized audit insertion now trims every session record to 256 entries. | `repeated TURN reads cannot grow a session audit record beyond its retained bound`. |
 | Browser session actions could surface rejected requests as unhandled promise errors. | Centralized action error handling now renders an in-session alert and viewer startup cleans up partial media state before reporting a failure. | Browser source syntax checks, static accessibility inspection, and served-session interaction checks passed. |
 | The Linux host safely refused unavailable local-display paths but returned exit code 0. | Startup and view-approval failures now exit with code 2 so scripts and supervisors can identify a refused host run. | Release binary checks for invalid X11 and missing Wayland portal both returned code 2. |
+| An expired join code could return an expiry response without immediately completing the terminal cleanup path. | Joining an expired session now terminates it through the normal expiry handler before returning the safe expiry response. | Added portal lifecycle regression coverage. |
+| A browser input burst larger than one batch could leave queued events unsent when the user stopped moving immediately afterward. | Input flushing now schedules follow-up batches until the queue is empty, preserving ordered canonical events within the existing server rate limit. | Browser source syntax checks and portal input-sequence/rate-limit regressions passed. |
+| An event credential could expire during an otherwise healthy browser session without a controlled token-refresh recovery path. | The browser now obtains a fresh scoped event credential, closes the stale stream, and reconnects with only the current session handler. | Browser source syntax checks and local state-transition flow passed; a forced real credential expiry remains a multi-minute runtime acceptance check. |
+| TCP-style X11 display strings were accepted by the environment check despite the documented local-display-only policy. | X11 capability detection and the media sender now accept only inherited local `:display` or `unix:display` forms and reject TCP-style display names before capture. | Linux unit checks and a release-host guarded `DISPLAY=localhost:10` run passed with safe exit code 2. |
+| Local Linux-host shutdown could leave a nonterminal portal session until normal expiry. | A joined host now sends a best-effort terminal action during local teardown while preserving fail-closed local cleanup on network failure. | Linux unit, lint, and release-build checks passed. |
+| Windows portal request failures could assume JSON and terminal cleanup had unhandled action paths. | The WPF client now has a non-JSON error fallback and the shell catches end-session failures, clears stale session state, and reports a safe status. | Source-reviewed only: .NET compilation requires the connected Windows desktop environment. |
 
 ## Required real-environment validation
 

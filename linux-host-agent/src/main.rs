@@ -165,6 +165,7 @@ async fn main() {
     let mut glib_tick = tokio::time::interval(Duration::from_millis(10));
     let mut input: Option<ActiveInput> = None;
     let mut control_prompted = false;
+    let mut terminated_by_portal = false;
 
     loop {
         tokio::select! {
@@ -193,7 +194,10 @@ async fn main() {
                     }
                 }
                 Ok(PortalEvent::Session(session)) => {
-                    if matches!(session.state.as_str(), "ENDED" | "EXPIRED") { break; }
+                    if matches!(session.state.as_str(), "ENDED" | "EXPIRED") {
+                        terminated_by_portal = true;
+                        break;
+                    }
                     if session.state == "VIEW_ACTIVE" {
                         if input.take().is_some() { println!("Remote control was revoked; screen viewing remains active."); }
                         approval.revoke_control();
@@ -252,6 +256,11 @@ async fn main() {
 
     let _ = sender.stop();
     drop(input);
+    if !terminated_by_portal {
+        if let Err(error) = portal.end_session(&config.session_id, &config.session_token).await {
+            eprintln!("The local host stopped, but the portal session could not be ended: {error}");
+        }
+    }
     println!("Display sharing and any portal-mediated remote control are stopped.");
 }
 

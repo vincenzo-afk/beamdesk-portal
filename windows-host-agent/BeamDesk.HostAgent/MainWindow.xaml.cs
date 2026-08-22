@@ -60,6 +60,10 @@ public partial class MainWindow : Window
             var state = await _portal.GetSessionAsync(_session);
             ApplyState(state);
         }
+        catch (PortalRequestException ex) when (ex.StatusCode is 404 or 410)
+        {
+            ResetSessionUi("Session unavailable", "The attended support session ended or expired. No sharing or remote control is active.");
+        }
         catch (Exception ex) { SetStatus("Connection status unavailable", ex.Message); }
     }
 
@@ -79,6 +83,12 @@ public partial class MainWindow : Window
         });
         if (session.State == "VIEW_PENDING" && !_viewPromptShown) { _viewPromptShown = true; Activate(); Topmost = true; }
         if (session.State == "CONTROL_PENDING" && !_controlPromptShown) { _controlPromptShown = true; Activate(); Topmost = true; }
+        if (session.State is not "VIEW_PENDING" and not "CONTROL_PENDING")
+        {
+            _viewPromptShown = false;
+            _controlPromptShown = false;
+            Topmost = false;
+        }
     }
 
     private async void ApproveView_Click(object sender, RoutedEventArgs e) => await HostActionAsync("approve-view");
@@ -106,8 +116,30 @@ public partial class MainWindow : Window
 
     private async void EndButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_session is not null) await _portal.EndAsync(_session);
-        _pollTimer.Stop(); _session = null; CodeInput.IsEnabled = true; CodeInput.Text = ""; JoinButton.IsEnabled = true; EndButton.IsEnabled = false; ViewPrompt.Visibility = ControlPrompt.Visibility = ActiveBanner.Visibility = PauseButton.Visibility = Visibility.Collapsed; SetStatus("Session ended", "No screen sharing or remote control is active.");
+        try
+        {
+            if (_session is not null) await _portal.EndAsync(_session);
+            ResetSessionUi("Session ended", "No screen sharing or remote control is active.");
+        }
+        catch (Exception ex)
+        {
+            ResetSessionUi("Local session closed", $"Local sharing was stopped. The portal could not confirm the end request: {ex.Message}");
+        }
+    }
+
+    private void ResetSessionUi(string title, string detail)
+    {
+        _pollTimer.Stop();
+        _session = null;
+        _viewPromptShown = false;
+        _controlPromptShown = false;
+        Topmost = false;
+        CodeInput.IsEnabled = _compatibility.CanJoinSupport;
+        CodeInput.Text = "";
+        JoinButton.IsEnabled = _compatibility.CanJoinSupport;
+        EndButton.IsEnabled = false;
+        ViewPrompt.Visibility = ControlPrompt.Visibility = ActiveBanner.Visibility = PauseButton.Visibility = Visibility.Collapsed;
+        SetStatus(title, detail);
     }
 
     private void SetStatus(string title, string detail) { StatusTitle.Text = title; StatusDetail.Text = detail; }

@@ -1,11 +1,15 @@
 const storageKey = "beamdesk-current-session";
 let current = JSON.parse(sessionStorage.getItem(storageKey) || "null");
 let eventSource = null;
+let eventReconnectTimer = null;
+let eventReconnectAttempts = 0;
+let eventSubscriptionId = 0;
 let viewerPeer = null;
 let viewerStream = null;
 let inputAbort = null;
 let inputQueue = [];
 let inputFlushTimer = null;
+let inputDeliveryInFlight = false;
 let inputSequence = 0;
 
 function escapeHtml(text) {
@@ -40,6 +44,10 @@ function saveCurrent(value) {
 }
 
 function stopEvents() {
+  eventSubscriptionId += 1;
+  if (eventReconnectTimer) window.clearTimeout(eventReconnectTimer);
+  eventReconnectTimer = null;
+  eventReconnectAttempts = 0;
   eventSource?.close();
   eventSource = null;
 }
@@ -254,16 +262,25 @@ async function startViewer(controlGranted) {
   }
 }
 
-function queueRemoteInput(event) {
-  inputQueue.push(event);
-  if (inputFlushTimer) return;
+function scheduleRemoteInputFlush() {
+  if (inputFlushTimer || inputDeliveryInFlight) return;
   inputFlushTimer = window.setTimeout(async () => {
     inputFlushTimer = null;
     const events = inputQueue.splice(0, 64);
     if (!events.length || !current) return;
+    inputDeliveryInFlight = true;
     try { await request(`/api/sessions/${current.id}/input`, { method: "POST", body: JSON.stringify({ sequence: inputSequence++, events }) }); }
     catch (error) { console.warn("Remote input was not delivered", error); }
+    finally {
+      inputDeliveryInFlight = false;
+      if (inputQueue.length) scheduleRemoteInputFlush();
+    }
   }, 33);
+}
+
+function queueRemoteInput(event) {
+  inputQueue.push(event);
+  scheduleRemoteInputFlush();
 }
 
 function enableRemoteInput() {
@@ -293,12 +310,23 @@ async function handleSignal(envelope) {
 
 async function subscribeToSession() {
   stopEvents();
+  const subscriptionId = eventSubscriptionId;
   try {
     const grant = await request(`/api/sessions/${current.id}/event-token`, { method: "POST", body: "{}" });
-    eventSource = new EventSource(`/api/sessions/${current.id}/events?access=${encodeURIComponent(grant.accessToken)}`);
-    eventSource.addEventListener("session", (event) => renderSession(JSON.parse(event.data)));
-    eventSource.addEventListener("signal", (event) => handleSignal(JSON.parse(event.data)).catch((error) => console.warn("Could not apply host signaling", error)));
-    eventSource.addEventListener("chat", (event) => appendChatMessage(JSON.parse(event.data)));
+    if (subscriptionId !== eventSubscriptionId || !current) return;
+    const source = new EventSource(`/api/sessions/${current.id}/events?access=${encodeURIComponent(grant.accessToken)}`);
+    eventSource = source;
+    source.addEventListener("open", () => { if (source === eventSource && subscriptionId === eventSubscriptionId) eventReconnectAttempts = 0; });
+    source.addEventListener("session", (event) => { if (source === eventSource && subscriptionId === eventSubscriptionId) renderSession(JSON.parse(event.data)); });
+    source.addEventListener("signal", (event) => { if (source === eventSource && subscriptionId === eventSubscriptionId) handleSignal(JSON.parse(event.data)).catch((error) => console.warn("Could not apply host signaling", error)); });
+    source.addEventListener("chat", (event) => { if (source === eventSource && subscriptionId === eventSubscriptionId) appendChatMessage(JSON.parse(event.data)); });
+    source.addEventListener("error", () => {
+      if (source !== eventSource || subscriptionId !== eventSubscriptionId || !current) return;
+      source.close();
+      eventSource = null;
+      const delay = Math.min(30_000, 1_000 * (2 ** Math.min(eventReconnectAttempts++, 5)));
+      eventReconnectTimer = window.setTimeout(() => { eventReconnectTimer = null; if (subscriptionId === eventSubscriptionId && current) subscribeToSession(); }, delay);
+    });
   } catch (error) { console.warn("Live session updates are unavailable", error); }
 }
 

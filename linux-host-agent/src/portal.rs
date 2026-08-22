@@ -179,6 +179,16 @@ impl PortalClient {
         Ok(())
     }
 
+    /// Ends the server-side attended session when this host stops locally. The
+    /// portal invalidates all role credentials and revokes view/control state.
+    pub async fn end_session(&self, session_id: &str, session_token: &str) -> Result<(), PortalError> {
+        self.authenticated(self.http.post(self.endpoint(session_id, "end")?), session_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     /// Requests only role-scoped, short-lived TURN credentials. The portal owns
     /// the CoTURN shared secret; this host receives only per-session relay URIs.
     pub async fn turn_servers(&self, session_id: &str, session_token: &str) -> Result<Vec<TurnServer>, PortalError> {

@@ -28,6 +28,8 @@ pub enum X11InputError {
     ApprovalRequired,
     #[error("The X11 display could not be opened or does not provide XTEST: {0}")]
     X11(String),
+    #[error("BeamDesk refuses a non-local X11 display name.")]
+    NonLocalDisplay,
     #[error("The input envelope was stale or duplicated.")]
     StaleEnvelope,
     #[error("BeamDesk does not inject the unsupported keyboard code `{0}` into X11.")]
@@ -53,6 +55,9 @@ pub struct X11InputController {
 /// capture. This deliberately performs no input injection and accepts no remote
 /// display name.
 pub fn verify_local_display(local_display: &str) -> Result<(), X11InputError> {
+    if !is_local_display_name(local_display) {
+        return Err(X11InputError::NonLocalDisplay);
+    }
     let (connection, screen_number) = x11rb::connect(Some(local_display))
         .map_err(|error| X11InputError::X11(error.to_string()))?;
     let screen = &connection.setup().roots[screen_number];
@@ -62,10 +67,21 @@ pub fn verify_local_display(local_display: &str) -> Result<(), X11InputError> {
     Ok(())
 }
 
+/// Accept only X11 display syntaxes that point to the locally inherited Unix
+/// display socket. TCP-style host names are refused even when a caller claims
+/// they resolve locally, so an operator can never redirect compatibility capture.
+pub fn is_local_display_name(display: &str) -> bool {
+    let display = display.trim();
+    display.starts_with(':') || display.strip_prefix("unix:").is_some_and(|value| !value.is_empty())
+}
+
 impl X11InputController {
     pub fn connect(local_display: &str, approval: &LocalApprovalState) -> Result<Self, X11InputError> {
         if !approval.can_inject_input() {
             return Err(X11InputError::ApprovalRequired);
+        }
+        if !is_local_display_name(local_display) {
+            return Err(X11InputError::NonLocalDisplay);
         }
         let (connection, screen_number) = x11rb::connect(Some(local_display))
             .map_err(|error| X11InputError::X11(error.to_string()))?;
@@ -205,5 +221,13 @@ mod tests {
     #[test]
     fn inaccessible_x11_display_fails_before_capture_or_input_starts() {
         assert!(verify_local_display("not-a-local-x11-display").is_err());
+    }
+
+    #[test]
+    fn rejects_tcp_style_x11_display_names_before_opening_them() {
+        assert!(is_local_display_name(":0"));
+        assert!(is_local_display_name("unix:0"));
+        assert!(!is_local_display_name("localhost:0"));
+        assert!(!is_local_display_name("operator.example:0"));
     }
 }
