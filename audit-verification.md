@@ -41,7 +41,7 @@
 | A JSON body over the 16 KiB limit returned a generic HTTP 500 response. | The error handler now returns cache-safe JSON with HTTP 413 and no framework details. | `oversized JSON requests receive a safe 413 response instead of an internal error`. |
 | Strict Linux linting rejected `LocalApprovalState::new` without `Default`. | Added the equivalent `Default` implementation. | `cargo clippy --all-targets -- -D warnings`. |
 | Strict Linux linting flagged an oversized `ActiveInput` enum variant. | Boxed the X11 controller variant without changing the attended control flow. | `cargo clippy --all-targets -- -D warnings` and all Linux tests. |
-| CI did not check browser JavaScript syntax, strict Rust linting, or a release build. | CI now runs both JavaScript syntax checks, strict Rust linting, and a release compile; actions were updated to their Node 24-compatible major releases. | Local equivalents passed; remote CI is dispatched after this audit commit. |
+| CI did not check browser JavaScript syntax, strict Rust linting, or a release build. | CI now runs both JavaScript syntax checks, strict Rust linting, and a release compile; actions were updated to their Node 24-compatible major releases. | Local equivalents passed. A post-push workflow dispatch was attempted and GitHub returned HTTP 422 because Actions is disabled for the repository owner. |
 | Render instructions referred to a private repository and did not state the single-process state constraint. | Documentation now uses repository-neutral access wording and records that the current in-memory portal must remain single-instance. | Documentation review. |
 
 ## Required real-environment validation
