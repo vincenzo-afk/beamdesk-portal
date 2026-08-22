@@ -25,7 +25,7 @@ struct RunConfig {
 
 enum ActiveInput {
     Portal(PortalInputController),
-    X11(X11InputController),
+    X11(Box<X11InputController>),
 }
 
 fn run_config_from_env() -> Result<RunConfig, &'static str> {
@@ -211,7 +211,7 @@ async fn main() {
                         }
                         let requested_input = match capabilities.display_path {
                             DisplayPath::WaylandPortal => PortalInputController::request(&approval).await.map(ActiveInput::Portal).map_err(|error| error.to_string()),
-                            DisplayPath::X11Compatibility => X11InputController::connect(x11_display.as_deref().expect("The validated local X11 display is retained."), &approval).map(ActiveInput::X11).map_err(|error| error.to_string()),
+                            DisplayPath::X11Compatibility => X11InputController::connect(x11_display.as_deref().expect("The validated local X11 display is retained."), &approval).map(|controller| ActiveInput::X11(Box::new(controller))).map_err(|error| error.to_string()),
                             DisplayPath::Unsupported => unreachable!(),
                         };
                         match requested_input {

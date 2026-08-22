@@ -2,6 +2,8 @@
 
 The repository now includes a root `render.yaml` Blueprint for the **BeamDesk portal only**. It uses `pnpm install --frozen-lockfile`, starts the Express service with `pnpm start`, probes `/healthz`, and enables trusted proxy handling only in the Render deployment. The portal continues to work in direct WebRTC mode until a TURN URL and shared secret are configured.
 
+> The current portal keeps active sessions, event-stream subscribers, rate windows, and terminal audit retention in process memory. Deploy exactly one portal instance for development and validation. A restart or horizontal scaling will not preserve an active attended-support session; a shared coordination and persistence layer is required before a multi-instance production deployment.
+
 Render Blueprints are repository-root YAML definitions that Render deploys after a user connects the Git repository in the Render Dashboard. Sensitive environment variables should be declared with `sync: false`, which prompts for their value in Render rather than putting it in the repository. [1] [2]
 
 | Variable | Blueprint behavior | Production requirement |
@@ -15,7 +17,7 @@ The Blueprint does **not** provision CoTURN. A TURN relay needs a persistent, ne
 
 ## Manual deployment sequence
 
-1. In Render, connect the GitHub account that can access the private `vincenzo-afk/beamdesk-portal` repository.
+1. In Render, connect the GitHub account that can access the `vincenzo-afk/beamdesk-portal` repository.
 2. Select **New → Blueprint**, choose the repository and its `master` branch, then review the `beamdesk-portal` web-service definition.
 3. Enter the TURN variables only if a separately tested CoTURN relay is available. Otherwise leave them unset and use direct-only development connectivity.
 4. Deploy the Blueprint and run `BEAMDESK_SMOKE_URL="https://<render-service>.onrender.com/" pnpm smoke` from a trusted machine.

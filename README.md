@@ -20,6 +20,7 @@ BeamDesk is a development-stage remote-support product built around a public one
 - [Configuration](#configuration)
 - [Portal API](#portal-api)
 - [Testing](#testing)
+- [Verification ledger](#verification-ledger)
 - [Deployment](#deployment)
 - [Project structure](#project-structure)
 - [Roadmap and validation](#roadmap-and-validation)
@@ -150,6 +151,10 @@ BEAMDESK_SMOKE_URL="http://127.0.0.1:4173/" pnpm smoke
 
 The test suites cover portal authorization, chat authorization and retention, approval state transitions, session expiry, audit access, input validation, abuse limits, TURN failure handling, Linux capability selection, input mapping, and native media-graph construction. They do not prove interactive desktop integration. Use the [acceptance matrix](acceptance-matrix.md) for required Windows, Wayland, X11, and relay real-device tests.
 
+## Verification ledger
+
+The current feature-by-feature local audit, corrected findings, exact commands, and remaining real-environment acceptance gates are recorded in [audit-verification.md](audit-verification.md). It should be read with the [acceptance matrix](acceptance-matrix.md) before making a production-readiness claim.
+
 ## Deployment
 
 `render.yaml` defines a Render Blueprint for the portal. Connect the repository in Render, configure protected TURN values only after a separate CoTURN service has been deployed, and verify the result with `pnpm smoke`. The portal Blueprint intentionally does not deploy CoTURN because a relay requires a persistent host and appropriate UDP/TCP network support. See [render-deployment-notes.md](render-deployment-notes.md) and [turn-reliability-notes.md](turn-reliability-notes.md).
@@ -166,7 +171,8 @@ The test suites cover portal authorization, chat authorization and retention, ap
 ├── windows-host-agent/      # WPF attended-host approval shell
 ├── render.yaml              # Render portal Blueprint
 ├── compatibility-matrix.md  # Supported desktop policy
-└── acceptance-matrix.md     # Automated and real-device acceptance evidence
+├── acceptance-matrix.md     # Automated and real-device acceptance evidence
+└── audit-verification.md    # Local verification ledger and external test gates
 ```
 
 ## Roadmap and validation

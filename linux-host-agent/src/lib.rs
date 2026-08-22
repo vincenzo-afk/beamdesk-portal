@@ -69,12 +69,18 @@ pub enum HostPermission {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalApprovalState {
-    pub joined: bool,
-    pub permission: HostPermission,
+  pub joined: bool,
+  pub permission: HostPermission,
+}
+
+impl Default for LocalApprovalState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LocalApprovalState {
-    pub fn new() -> Self { Self { joined: false, permission: HostPermission::None } }
+  pub fn new() -> Self { Self { joined: false, permission: HostPermission::None } }
     pub fn join(&mut self) { self.joined = true; self.permission = HostPermission::None; }
     pub fn approve_view(&mut self) -> Result<(), &'static str> {
         if !self.joined { return Err("A support code must be joined before approving view."); }

@@ -214,6 +214,19 @@ test("malformed session requests receive a safe JSON error without framework det
   assert.equal(Object.hasOwn(body, "stack"), false);
 });
 
+test("oversized JSON requests receive a safe 413 response instead of an internal error", async () => {
+  const response = await fetch(`${base}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ padding: "x".repeat(17 * 1024) }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 413);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(body.error, "Request body is too large.");
+  assert.equal(Object.hasOwn(body, "stack"), false);
+});
+
 test("the public readiness endpoint is cache-safe and reveals no credentials", async () => {
   const response = await fetch(`${base}/healthz`);
   const body = await response.json();

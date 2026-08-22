@@ -16,13 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Install portal dependencies
         run: corepack enable && pnpm install --frozen-lockfile
+      - name: Check portal JavaScript syntax
+        run: node --check server.mjs && node --check public/app.js
       - name: Run portal regression tests
         run: pnpm test
       - name: Run portal health smoke check
@@ -40,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install native media dependencies
         run: |
           sudo apt-get update
@@ -58,6 +60,13 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup component add rustfmt clippy
       - name: Run Linux host tests
         working-directory: linux-host-agent
         run: cargo test
+      - name: Run Linux host lint
+        working-directory: linux-host-agent
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Build Linux host release artifact
+        working-directory: linux-host-agent
+        run: cargo build --release

@@ -567,6 +567,9 @@ app.post("/api/sessions/:id/report-abuse", (req, res) => {
 
 app.use((error, _req, res, next) => {
   if (res.headersSent) return next(error);
+  if (error?.type === "entity.too.large" || error?.status === 413) {
+    return res.status(413).json({ error: "Request body is too large." });
+  }
   if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
     return res.status(400).json({ error: "Request body must be valid JSON." });
   }
