@@ -5,6 +5,8 @@ export const SESSION_TTL_MS = 10 * 60 * 1000;
 export const TURN_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
 export const TERMINAL_SESSION_RETENTION_MS = 60 * 60 * 1000;
 export const EVENT_HEARTBEAT_MS = 25_000;
+export const EVENT_TOKEN_WINDOW_MS = 60_000;
+export const MAX_EVENT_TOKENS_PER_ROLE_WINDOW = 12;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const RATE_WINDOW_MS = 60_000;
 export const RATE_WINDOW_RETENTION_MS = 2 * RATE_WINDOW_MS;
@@ -38,6 +40,7 @@ app.use(express.static("public"));
 const sessions = new Map();
 const rateWindows = new Map();
 const eventTokens = new Map();
+const eventTokenWindows = new Map();
 const inputWindows = new Map();
 const abuseReports = [];
 
@@ -111,6 +114,21 @@ function invalidateEventTokens(sessionId) {
   for (const [accessToken, grant] of eventTokens.entries()) {
     if (grant.sessionId === sessionId) eventTokens.delete(accessToken);
   }
+  for (const key of eventTokenWindows.keys()) {
+    if (key.startsWith(`${sessionId}:`)) eventTokenWindows.delete(key);
+  }
+}
+
+function eventTokenRateLimited(sessionId, role, now = Date.now()) {
+  const key = `${sessionId}:${role}`;
+  const window = eventTokenWindows.get(key) || { startedAt: now, count: 0 };
+  if (now - window.startedAt >= EVENT_TOKEN_WINDOW_MS) {
+    window.startedAt = now;
+    window.count = 0;
+  }
+  window.count += 1;
+  eventTokenWindows.set(key, window);
+  return window.count > MAX_EVENT_TOKENS_PER_ROLE_WINDOW;
 }
 
 export function closeSubscribers(session) {
@@ -346,6 +364,7 @@ app.get("/api/sessions/:id/ice-config", (req, res) => {
 app.post("/api/sessions/:id/event-token", (req, res) => {
   const context = requireSession(req, res);
   if (!context) return;
+  if (eventTokenRateLimited(context.session.id, context.role)) return sendRateLimit(res, "Please wait before requesting another live-event credential.", Math.ceil(EVENT_TOKEN_WINDOW_MS / 1000));
   const expiresAt = Math.min(context.session.expiresAt, Date.now() + 60_000);
   const accessToken = makeToken();
   eventTokens.set(accessToken, { sessionId: context.session.id, role: context.role, expiresAt });
@@ -458,7 +477,7 @@ app.use((error, _req, res, next) => {
   return res.status(500).json({ error: "The portal could not process this request." });
 });
 
-export { app, sessions, codeDigest, eventTokens, rateWindows, abuseReports };
+export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, abuseReports };
 
 if (process.env.RUN_PORTAL_SERVER === "true") {
   const port = Number(process.env.PORT || 4173);

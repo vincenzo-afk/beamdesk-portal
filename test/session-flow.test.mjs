@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, closeSubscribers, eventTokens, expireSession, pruneRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, closeSubscribers, eventTokens, eventTokenWindows, expireSession, pruneRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
 
 let server;
 let base;
@@ -56,6 +56,23 @@ test("live-update credentials are single-use and scoped to an authenticated sess
   assert.equal(missing.status, 403);
   const eventResponse = await fetch(`${base}/api/sessions/${created.body.sessionId}/events?access=${grant.body.accessToken}`, { signal: AbortSignal.timeout(100) }).catch(() => null);
   assert.ok(eventResponse === null || eventResponse.status === 200);
+});
+
+test("live-event credential issuance is bounded per role and cleared with terminal session state", async () => {
+  sessions.clear();
+  eventTokenWindows.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const headers = { "x-session-token": created.body.token };
+  for (let index = 0; index < 12; index += 1) {
+    const issued = await api(`/api/sessions/${created.body.sessionId}/event-token`, { method: "POST", headers });
+    assert.equal(issued.response.status, 200);
+  }
+  const limited = await api(`/api/sessions/${created.body.sessionId}/event-token`, { method: "POST", headers });
+  assert.equal(limited.response.status, 429);
+  assert.equal(limited.response.headers.get("retry-after"), "60");
+  assert.equal(eventTokenWindows.has(`${created.body.sessionId}:operator`), true);
+  await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers, body: "{}" });
+  assert.equal(eventTokenWindows.has(`${created.body.sessionId}:operator`), false);
 });
 
 test("session-event heartbeat resources are cleared when the session closes", () => {
