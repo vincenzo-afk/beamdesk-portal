@@ -166,6 +166,19 @@ test("the public portal is non-embeddable and does not cache session-bearing res
   assert.match(response.headers.get("strict-transport-security"), /max-age=31536000/);
 });
 
+test("malformed session requests receive a safe JSON error without framework details", async () => {
+  const response = await fetch(`${base}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not-valid-json",
+  });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(body.error, "Request body must be valid JSON.");
+  assert.equal(Object.hasOwn(body, "stack"), false);
+});
+
 test("the public readiness endpoint is cache-safe and reveals no credentials", async () => {
   const response = await fetch(`${base}/healthz`);
   const body = await response.json();
