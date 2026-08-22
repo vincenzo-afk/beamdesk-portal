@@ -287,6 +287,7 @@ app.post("/api/sessions", (req, res) => {
     audit: [],
     subscribers: new Set(),
     signalSequence: 0,
+    lastInputSequence: -1,
     expiryTimer: null,
     purgeTimer: null,
   };
@@ -395,6 +396,8 @@ app.post("/api/sessions/:id/input", (req, res) => {
   if (context.session.state !== "CONTROL_ACTIVE") return res.status(409).json({ error: "Remote input is disabled until the Windows host approves control." });
   if (inputRateLimited(context.session.id)) return res.status(429).json({ error: "Remote input is temporarily rate-limited." });
   if (!validInputPayload(req.body)) return res.status(400).json({ error: "The remote input payload is invalid." });
+  if (req.body.sequence <= context.session.lastInputSequence) return res.status(409).json({ error: "The remote input sequence is stale or already processed." });
+  context.session.lastInputSequence = req.body.sequence;
   publishInput(context.session, { sequence: req.body.sequence, events: req.body.events, expiresAt: context.session.expiresAt });
   return res.status(202).json({ accepted: true });
 });

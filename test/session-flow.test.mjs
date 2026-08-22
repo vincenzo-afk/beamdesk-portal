@@ -140,6 +140,12 @@ test("remote input is accepted only from the operator after distinct control app
   assert.equal(invalid.response.status, 400);
   const accepted = await api(`/api/sessions/${created.body.sessionId}/input`, { method: "POST", headers: operatorHeaders, body: JSON.stringify(payload) });
   assert.equal(accepted.response.status, 202);
+  const replayed = await api(`/api/sessions/${created.body.sessionId}/input`, { method: "POST", headers: operatorHeaders, body: JSON.stringify(payload) });
+  assert.equal(replayed.response.status, 409);
+  const stale = await api(`/api/sessions/${created.body.sessionId}/input`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ ...payload, sequence: 0 }) });
+  assert.equal(stale.response.status, 409);
+  const next = await api(`/api/sessions/${created.body.sessionId}/input`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ ...payload, sequence: 2 }) });
+  assert.equal(next.response.status, 202);
 });
 
 test("the public portal is non-embeddable and does not cache session-bearing responses", async () => {
