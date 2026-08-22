@@ -13,6 +13,7 @@ export const CHAT_WINDOW_MS = 10_000;
 export const MAX_CHAT_MESSAGES_PER_ROLE_WINDOW = 20;
 export const MAX_CHAT_MESSAGE_LENGTH = 1_000;
 export const MAX_CHAT_MESSAGES_PER_SESSION = 80;
+export const MAX_AUDIT_EVENTS_PER_SESSION = 256;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const RATE_WINDOW_MS = 60_000;
 export const RATE_WINDOW_RETENTION_MS = 2 * RATE_WINDOW_MS;
@@ -38,7 +39,7 @@ app.get("/healthz", (_req, res) => {
   res.json({
     status: "ok",
     service: "beamdesk-portal",
-    relay: process.env.BEAMDESK_TURN_SHARED_SECRET && configuredTurnUrls().length ? "configured" : "direct-only",
+    relay: canGenerateTurnCredentials() ? "configured" : "direct-only",
   });
 });
 app.use(express.static("public"));
@@ -100,6 +101,9 @@ function publicSession(session, role) {
 
 function addAudit(session, event, actor) {
   session.audit.push({ at: Date.now(), event, actor });
+  if (session.audit.length > MAX_AUDIT_EVENTS_PER_SESSION) {
+    session.audit.splice(0, session.audit.length - MAX_AUDIT_EVENTS_PER_SESSION);
+  }
 }
 
 function publish(session) {
@@ -363,10 +367,21 @@ function configuredTurnUrls() {
   return String(process.env.BEAMDESK_TURN_URLS || "").split(",").map((value) => value.trim()).filter((value) => /^turns?:/i.test(value));
 }
 
+function canGenerateTurnCredentials() {
+  const secret = process.env.BEAMDESK_TURN_SHARED_SECRET;
+  if (!secret || !configuredTurnUrls().length) return false;
+  try {
+    crypto.createHmac(process.env.BEAMDESK_TURN_HMAC_ALGORITHM || "sha1", secret);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function makeTurnConfiguration(session, role) {
   const urls = configuredTurnUrls();
   const secret = process.env.BEAMDESK_TURN_SHARED_SECRET;
-  if (!secret || !urls.length) return null;
+  if (!secret || !urls.length || !canGenerateTurnCredentials()) return null;
   const expiresAt = Math.min(session.expiresAt, Date.now() + TURN_CREDENTIAL_TTL_MS);
   const username = `${Math.floor(expiresAt / 1000)}:${session.id}:${role}`;
   const algorithm = process.env.BEAMDESK_TURN_HMAC_ALGORITHM || "sha1";
@@ -563,6 +578,10 @@ app.post("/api/sessions/:id/report-abuse", (req, res) => {
   addAudit(context.session, "ABUSE_REPORTED", context.role);
   terminateSession(context.session, "ENDED", "SESSION_ENDED_AFTER_ABUSE_REPORT", context.role);
   return res.status(202).json({ reported: true, state: "ENDED" });
+});
+
+app.use("/api", (_req, res) => {
+  return res.status(404).json({ error: "API route is unavailable." });
 });
 
 app.use((error, _req, res, next) => {

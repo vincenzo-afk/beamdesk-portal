@@ -90,7 +90,7 @@ async fn main() {
         Ok(portal) => portal,
         Err(error) => {
             eprintln!("Portal configuration failed: {error}");
-            return;
+            std::process::exit(2);
         }
     };
 
@@ -103,7 +103,7 @@ async fn main() {
                 Ok(capture) => wayland_capture = Some(capture),
                 Err(error) => {
                     eprintln!("Display selection was not completed: {error}");
-                    return;
+                    std::process::exit(2);
                 }
             }
             None
@@ -111,11 +111,11 @@ async fn main() {
         DisplayPath::X11Compatibility => {
             let display = match env::var("DISPLAY") {
                 Ok(display) if !display.is_empty() => display,
-                _ => { eprintln!("No local X11 DISPLAY is available for attended capture."); return; }
+                _ => { eprintln!("No local X11 DISPLAY is available for attended capture."); std::process::exit(2); }
             };
             if let Err(error) = verify_local_display(&display) {
                 eprintln!("The local X11 display cannot be used for BeamDesk capture: {error}");
-                return;
+                std::process::exit(2);
             }
             println!("X11 compatibility mode will share the locally inherited display only.");
             Some(display)
@@ -127,7 +127,7 @@ async fn main() {
         Ok(stream) => stream,
         Err(error) => {
             eprintln!("The approved session event stream could not be opened: {error}");
-            return;
+            std::process::exit(2);
         }
     };
     let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel();
@@ -147,14 +147,17 @@ async fn main() {
         Ok(sender) => sender,
         Err(error) => {
             eprintln!("The local encrypted media sender could not start: {error}");
-            return;
+            std::process::exit(2);
         }
     };
 
-    if let Err(error) = portal.send_host_action(&config.session_id, &config.session_token, "approve-view").await {
+    if let Err(error) = portal
+        .send_host_action(&config.session_id, &config.session_token, "approve-view")
+        .await
+    {
         let _ = sender.stop();
         eprintln!("The view approval was not accepted by the current BeamDesk session: {error}");
-        return;
+        std::process::exit(2);
     }
 
     println!("Display sharing is active. Keep this terminal open; closing it revokes the local capture source.");

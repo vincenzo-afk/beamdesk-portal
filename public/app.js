@@ -14,9 +14,23 @@ function escapeHtml(text) {
 
 async function request(path, options = {}) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json", ...(current ? { "x-session-token": current.token } : {}), ...(options.headers || {}) }, ...options });
-  const body = await response.json();
+  const text = await response.text();
+  let body = {};
+  try { body = text ? JSON.parse(text) : {}; }
+  catch { throw new Error(response.ok ? "The portal returned an invalid response." : "The portal could not complete this request."); }
   if (!response.ok) throw new Error(body.error || "The request could not be completed.");
   return body;
+}
+
+function showSessionError(error) {
+  const message = error instanceof Error ? error.message : "The requested support action could not be completed.";
+  const target = document.querySelector("#session-error");
+  if (target) target.textContent = message;
+  else window.alert(message);
+}
+
+function runSessionAction(operation) {
+  Promise.resolve().then(operation).catch(showSessionError);
 }
 
 function saveCurrent(value) {
@@ -134,21 +148,21 @@ function renderSession(session) {
   const viewerMarkup = isOperator && viewGranted
     ? `<div class="stream-placeholder approved viewer-surface ${controlGranted ? "control-enabled" : ""}"><video id="remote-view" autoplay playsinline tabindex="0" aria-label="Approved host display stream"></video><p class="viewer-note">${controlGranted ? "Remote control active — click the view to focus input. The host can pause control at any time." : "Awaiting the host’s encrypted display stream."}</p></div>`
     : `<div class="stream-placeholder"><span class="screen-icon">▣</span><p>${viewGranted ? "The host may share a display only through the signed BeamDesk host app." : "No screen is being shared."}</p></div>`;
-  screen(`<section class="session-layout"><div class="session-main"><p class="eyebrow">${isOperator ? "OPERATOR CONSOLE" : "HOST JOIN"}</p><h1>${escapeHtml(title)}</h1><p class="lede">${escapeHtml(description)}</p>${isOperator && current.code ? `<div class="code-box"><p>Support code</p><strong>${escapeHtml(current.code)}</strong><button id="copy" class="text-button">Copy code</button></div>` : ""}${viewerMarkup}</div><aside class="card status-card"><p class="eyebrow">SESSION STATUS</p><div class="status-line"><span class="pulse ${session.state.includes("ACTIVE") ? "active" : ""}"></span><strong>${escapeHtml(session.state.replace("_", " "))}</strong></div><p class="expires">Expires ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p><div class="actions">${session.capabilities.canRequestView ? '<button id="request-view" class="primary">Request screen view</button>' : ""}${session.capabilities.canRequestControl ? '<button id="request-control" class="primary">Request remote control</button>' : ""}${session.capabilities.canApproveView ? '<button id="approve-view" class="primary">Approve screen view</button><button id="deny-view" class="secondary">Decline</button>' : ""}${session.capabilities.canApproveControl ? '<button id="approve-control" class="primary">Approve remote control</button><button id="deny-control" class="secondary">Keep view only</button>' : ""}${session.state === "CONTROL_ACTIVE" && !isOperator ? '<button id="revoke" class="secondary danger">Pause remote control</button>' : ""}<button id="audit-history" class="text-button">View full audit history</button><button id="report-abuse" class="text-button danger-text">Report a security concern and end</button><button id="end" class="text-button">End session</button></div><div class="audit"><p>Recent events</p>${session.audit.map((event) => `<small>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${escapeHtml(event.event.replaceAll("_", " "))}</small>`).join("")}</div></aside></section>`);
+  screen(`<section class="session-layout"><div class="session-main"><p class="eyebrow">${isOperator ? "OPERATOR CONSOLE" : "HOST JOIN"}</p><h1>${escapeHtml(title)}</h1><p class="lede">${escapeHtml(description)}</p>${isOperator && current.code ? `<div class="code-box"><p>Support code</p><strong>${escapeHtml(current.code)}</strong><button id="copy" class="text-button">Copy code</button></div>` : ""}${viewerMarkup}</div><aside class="card status-card"><p class="eyebrow">SESSION STATUS</p><div class="status-line"><span class="pulse ${session.state.includes("ACTIVE") ? "active" : ""}"></span><strong>${escapeHtml(session.state.replace("_", " "))}</strong></div><p class="expires">Expires ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p><p id="session-error" class="error" role="alert"></p><div class="actions">${session.capabilities.canRequestView ? '<button id="request-view" class="primary">Request screen view</button>' : ""}${session.capabilities.canRequestControl ? '<button id="request-control" class="primary">Request remote control</button>' : ""}${session.capabilities.canApproveView ? '<button id="approve-view" class="primary">Approve screen view</button><button id="deny-view" class="secondary">Decline</button>' : ""}${session.capabilities.canApproveControl ? '<button id="approve-control" class="primary">Approve remote control</button><button id="deny-control" class="secondary">Keep view only</button>' : ""}${session.state === "CONTROL_ACTIVE" && !isOperator ? '<button id="revoke" class="secondary danger">Pause remote control</button>' : ""}<button id="audit-history" class="text-button">View full audit history</button><button id="report-abuse" class="text-button danger-text">Report a security concern and end</button><button id="end" class="text-button">End session</button></div><div class="audit"><p>Recent events</p>${session.audit.map((event) => `<small>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${escapeHtml(event.event.replaceAll("_", " "))}</small>`).join("")}</div></aside></section>`);
   document.querySelector(".status-card")?.insertAdjacentHTML("beforeend", chatPanelMarkup(session, chatMessages));
   document.querySelector("#copy")?.addEventListener("click", () => navigator.clipboard.writeText(current.code));
-  document.querySelector("#request-view")?.addEventListener("click", () => action("view-request"));
-  document.querySelector("#request-control")?.addEventListener("click", () => action("control-request"));
-  document.querySelector("#approve-view")?.addEventListener("click", () => hostAction("approve-view"));
-  document.querySelector("#deny-view")?.addEventListener("click", () => hostAction("deny-view"));
-  document.querySelector("#approve-control")?.addEventListener("click", () => hostAction("approve-control"));
-  document.querySelector("#deny-control")?.addEventListener("click", () => hostAction("deny-control"));
-  document.querySelector("#revoke")?.addEventListener("click", () => hostAction("revoke-control"));
+  document.querySelector("#request-view")?.addEventListener("click", () => runSessionAction(() => action("view-request")));
+  document.querySelector("#request-control")?.addEventListener("click", () => runSessionAction(() => action("control-request")));
+  document.querySelector("#approve-view")?.addEventListener("click", () => runSessionAction(() => hostAction("approve-view")));
+  document.querySelector("#deny-view")?.addEventListener("click", () => runSessionAction(() => hostAction("deny-view")));
+  document.querySelector("#approve-control")?.addEventListener("click", () => runSessionAction(() => hostAction("approve-control")));
+  document.querySelector("#deny-control")?.addEventListener("click", () => runSessionAction(() => hostAction("deny-control")));
+  document.querySelector("#revoke")?.addEventListener("click", () => runSessionAction(() => hostAction("revoke-control")));
   document.querySelector("#audit-history")?.addEventListener("click", showAuditHistory);
   document.querySelector("#report-abuse")?.addEventListener("click", reportSecurityConcern);
-  document.querySelector("#end")?.addEventListener("click", endSession);
+  document.querySelector("#end")?.addEventListener("click", () => runSessionAction(endSession));
   document.querySelector("#chat-form")?.addEventListener("submit", sendChat);
-  if (isOperator && viewGranted) startViewer(controlGranted);
+  if (isOperator && viewGranted) runSessionAction(() => startViewer(controlGranted));
   else clearViewer();
 }
 
@@ -218,21 +232,26 @@ async function startViewer(controlGranted) {
     if (controlGranted) enableRemoteInput();
     return;
   }
-  const iceConfig = await getIceConfiguration();
-  viewerStream = new MediaStream();
-  viewerPeer = new RTCPeerConnection(iceConfig);
-  viewerPeer.ontrack = (event) => {
-    event.streams[0]?.getTracks().forEach((track) => viewerStream.addTrack(track));
+  try {
+    const iceConfig = await getIceConfiguration();
+    viewerStream = new MediaStream();
+    viewerPeer = new RTCPeerConnection(iceConfig);
+    viewerPeer.ontrack = (event) => {
+      event.streams[0]?.getTracks().forEach((track) => viewerStream.addTrack(track));
+      attachViewer();
+    };
+    viewerPeer.onicecandidate = (event) => {
+      if (event.candidate) sendSignal("candidate", event.candidate.toJSON()).catch((error) => console.warn("Could not relay ICE candidate", error));
+    };
+    const offer = await viewerPeer.createOffer({ offerToReceiveVideo: true });
+    await viewerPeer.setLocalDescription(offer);
+    await sendSignal("offer", { type: offer.type, sdp: offer.sdp });
     attachViewer();
-  };
-  viewerPeer.onicecandidate = (event) => {
-    if (event.candidate) sendSignal("candidate", event.candidate.toJSON()).catch((error) => console.warn("Could not relay ICE candidate", error));
-  };
-  const offer = await viewerPeer.createOffer({ offerToReceiveVideo: true });
-  await viewerPeer.setLocalDescription(offer);
-  await sendSignal("offer", { type: offer.type, sdp: offer.sdp });
-  attachViewer();
-  if (controlGranted) enableRemoteInput();
+    if (controlGranted) enableRemoteInput();
+  } catch (error) {
+    clearViewer();
+    throw error;
+  }
 }
 
 function queueRemoteInput(event) {

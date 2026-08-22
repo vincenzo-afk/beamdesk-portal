@@ -1,6 +1,6 @@
 # BeamDesk Verification Ledger
 
-**Audit scope:** locally executable portal, browser, Linux-host, repository, CI, dependency, and deployment-readiness checks completed on 22 August 2026.
+**Audit scope:** locally executable portal, browser, Linux-host, repository, CI, dependency, and deployment-readiness checks completed on 22 August 2026, including an extended adversarial failure-path pass.
 
 > This ledger is deliberately evidence-based. **Passing local tests do not claim that Windows desktop capture, a Wayland or X11 desktop session, multi-device WebRTC, a TURN relay, or Render production deployment has been completed.** Those require the listed external environments.
 
@@ -8,14 +8,14 @@
 
 | Area | Evidence run | Result | Meaning |
 |---|---|---|---|
-| Portal protocol and safety | `pnpm test` | 21 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, and TURN credential routes passed local regression coverage. |
+| Portal protocol and safety | `pnpm test` | 25 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, TURN credential routes, safe API misses, replayed event credentials, and bounded audit records passed local regression coverage. |
 | Browser session UI | Local browser session: create code, join host, send chat | Passed | The UI hid chat before host join, enabled it after join, submitted a message, rendered the transcript, and produced no client-side console error. |
 | Portal operational checks | Syntax checks, fresh `/healthz`, `pnpm smoke`, direct HTTP payload probe | Passed | The start path, readiness endpoint, direct-only fallback, and safe oversized-payload response were verified against a fresh local process. |
 | Production JavaScript dependency audit | `pnpm audit --prod` | No known vulnerabilities reported | The installed production dependency graph had no advisory reported by the package registry at audit time. |
 | Linux host unit and integration foundations | `cargo test --all-targets` | 21 passing tests | Capability selection, local approval guards, Portal/X11 input mapping, signaling conversions, and GStreamer graph construction passed. |
 | Linux host quality and build | `cargo clippy --all-targets -- -D warnings`; `cargo build --release` | Passed | Strict linting and optimized compilation completed successfully. |
 | Linux media prerequisites | `gst-inspect-1.0` for `webrtcbin`, `pipewiresrc`, and `ximagesrc` | Passed | The required local GStreamer element factories were discoverable. |
-| Unsupported Linux environment | `cargo run` with Wayland/X11 variables removed | Passed | The current host refused capture and control, exited with code 2, and did not fall back to an unsafe backend. |
+| Unsupported Linux environment | Release host run with invalid X11 and missing Wayland portal inputs | Passed | The current host refused capture and control with exit code 2 and did not fall back to an unsafe backend. |
 | Repository integrity | `git fsck --no-reflogs --unreachable` | Passed after cleanup | The only stale, unreachable automation-authored local object was removed; no unreachable objects remain. |
 
 ## Feature evidence
@@ -30,6 +30,7 @@
 | Session chat | Tests cover host-join gating, participant authorization, normalization, live SSE delivery, size/rate/transcript limits, terminal retention, and purge. A browser session also submitted and rendered a message. | Passed locally. |
 | Audit and abuse response | Tests cover authenticated terminal audit access, bounded retention, abuse reporting, and session termination. | Passed locally. |
 | HTTP hardening | Tests and direct probes cover security headers, cache prevention, malformed JSON, payload-size rejection, request/session limits, and health response secrecy. | Passed locally. |
+| API error boundary | Adversarial tests cover unknown API routes and invalid TURN HMAC configuration. | Passed locally with safe JSON 404 and direct-only 503 behavior. |
 | TURN credential boundary | Tests cover pre-view denial, short-lived configured credentials, terminal rejection, and absent-secret failure. | Passed locally; no relay was provisioned. |
 | Linux attended policy | Tests cover Wayland portal refusal without a portal, X11 selection rules, local approval guards, and static media graphs. | Passed locally; no compositor was available. |
 | Windows attended policy | Source contains a fail-closed WPF compatibility preflight only. | **Not validated:** no Windows folder or .NET desktop environment is currently connected. |
@@ -43,6 +44,11 @@
 | Strict Linux linting flagged an oversized `ActiveInput` enum variant. | Boxed the X11 controller variant without changing the attended control flow. | `cargo clippy --all-targets -- -D warnings` and all Linux tests. |
 | CI did not check browser JavaScript syntax, strict Rust linting, or a release build. | CI now runs both JavaScript syntax checks, strict Rust linting, and a release compile; actions were updated to their Node 24-compatible major releases. | Local equivalents passed. A post-push workflow dispatch was attempted and GitHub returned HTTP 422 because Actions is disabled for the repository owner. |
 | Render instructions referred to a private repository and did not state the single-process state constraint. | Documentation now uses repository-neutral access wording and records that the current in-memory portal must remain single-instance. | Documentation review. |
+| Unknown `/api/*` routes fell through to Express’ HTML 404 page. | Added a scoped JSON API fallback that preserves the portal security headers. | `unknown API routes return a safe JSON response with portal security headers`. |
+| An invalid TURN HMAC algorithm threw an unhandled exception and reported a configured relay in health checks. | TURN capability now validates HMAC construction first and fails closed to the existing direct-only 503 path. | `invalid TURN HMAC configuration fails closed without producing a server error`. |
+| Repeated TURN credential reads could retain 257 audit entries rather than the stated bound. | Centralized audit insertion now trims every session record to 256 entries. | `repeated TURN reads cannot grow a session audit record beyond its retained bound`. |
+| Browser session actions could surface rejected requests as unhandled promise errors. | Centralized action error handling now renders an in-session alert and viewer startup cleans up partial media state before reporting a failure. | Browser source syntax checks, static accessibility inspection, and served-session interaction checks passed. |
+| The Linux host safely refused unavailable local-display paths but returned exit code 0. | Startup and view-approval failures now exit with code 2 so scripts and supervisors can identify a refused host run. | Release binary checks for invalid X11 and missing Wayland portal both returned code 2. |
 
 ## Required real-environment validation
 
@@ -65,6 +71,7 @@ The following items are not defects in the local test results; they are **enviro
 pnpm test
 node --check server.mjs
 node --check public/app.js
+pnpm audit --prod
 
 # Start and smoke-test a local portal
 pnpm start
