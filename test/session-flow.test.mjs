@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, eventTokens, expireSession, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, closeSubscribers, eventTokens, expireSession, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
 
 let server;
 let base;
@@ -56,6 +56,18 @@ test("live-update credentials are single-use and scoped to an authenticated sess
   assert.equal(missing.status, 403);
   const eventResponse = await fetch(`${base}/api/sessions/${created.body.sessionId}/events?access=${grant.body.accessToken}`, { signal: AbortSignal.timeout(100) }).catch(() => null);
   assert.ok(eventResponse === null || eventResponse.status === 200);
+});
+
+test("session-event heartbeat resources are cleared when the session closes", () => {
+  const heartbeatTimer = setInterval(() => {}, 60_000);
+  heartbeatTimer.unref();
+  let ended = false;
+  const subscriber = { heartbeatTimer, res: { end: () => { ended = true; } } };
+  const session = { subscribers: new Set([subscriber]) };
+  closeSubscribers(session);
+  assert.equal(subscriber.heartbeatTimer, null);
+  assert.equal(ended, true);
+  assert.equal(session.subscribers.size, 0);
 });
 
 test("opaque WebRTC signals are refused before view approval and accepted only for an active consented session", async () => {

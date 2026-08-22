@@ -4,6 +4,7 @@ import express from "express";
 export const SESSION_TTL_MS = 10 * 60 * 1000;
 export const TURN_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
 export const TERMINAL_SESSION_RETENTION_MS = 60 * 60 * 1000;
+export const EVENT_HEARTBEAT_MS = 25_000;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -110,8 +111,12 @@ function invalidateEventTokens(sessionId) {
   }
 }
 
-function closeSubscribers(session) {
-  for (const subscriber of session.subscribers) subscriber.res.end();
+export function closeSubscribers(session) {
+  for (const subscriber of session.subscribers) {
+    if (subscriber.heartbeatTimer) clearInterval(subscriber.heartbeatTimer);
+    subscriber.heartbeatTimer = null;
+    subscriber.res.end();
+  }
   session.subscribers.clear();
 }
 
@@ -338,12 +343,20 @@ app.get("/api/sessions/:id/events", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!grant || !session || grant.sessionId !== session.id || grant.expiresAt <= Date.now()) return res.status(403).json({ error: "A current event credential is required." });
   eventTokens.delete(accessToken);
-  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" });
+  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", Connection: "keep-alive" });
   res.flushHeaders();
-  const subscriber = { res, role: grant.role };
+  const subscriber = { res, role: grant.role, heartbeatTimer: null };
   session.subscribers.add(subscriber);
   res.write(`event: session\ndata: ${JSON.stringify(publicSession(session, grant.role))}\n\n`);
-  req.on("close", () => session.subscribers.delete(subscriber));
+  subscriber.heartbeatTimer = setInterval(() => {
+    if (!res.writableEnded) res.write(": beamdesk-keepalive\n\n");
+  }, EVENT_HEARTBEAT_MS);
+  subscriber.heartbeatTimer.unref();
+  req.on("close", () => {
+    if (subscriber.heartbeatTimer) clearInterval(subscriber.heartbeatTimer);
+    subscriber.heartbeatTimer = null;
+    session.subscribers.delete(subscriber);
+  });
 });
 
 app.post("/api/sessions/:id/view-request", (req, res) => {
