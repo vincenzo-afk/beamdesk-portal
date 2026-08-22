@@ -50,7 +50,8 @@ jobs:
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad \
-            gstreamer1.0-nice
+            gstreamer1.0-nice \
+            gstreamer1.0-pipewire
       - name: Install current stable Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - name: Run Linux host tests
