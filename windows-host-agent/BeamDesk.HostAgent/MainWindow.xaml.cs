@@ -10,12 +10,25 @@ public partial class MainWindow : Window
     private JoinedSession? _session;
     private bool _viewPromptShown;
     private bool _controlPromptShown;
+    private readonly WindowsHostCompatibility _compatibility;
 
     public MainWindow()
     {
         InitializeComponent();
+        _compatibility = WindowsHostCompatibility.Evaluate(
+            OperatingSystem.IsWindows(),
+            Environment.UserInteractive,
+            Environment.OSVersion.Version,
+            nativeCaptureAdapterAvailable: false,
+            nativeInputAdapterAvailable: false);
         _pollTimer.Tick += async (_, _) => await RefreshAsync();
         EndButton.IsEnabled = false;
+        if (!_compatibility.CanJoinSupport)
+        {
+            JoinButton.IsEnabled = false;
+            CodeInput.IsEnabled = false;
+            SetStatus("Windows host unavailable", _compatibility.Detail);
+        }
     }
 
     private async void JoinButton_Click(object sender, RoutedEventArgs e)
@@ -77,6 +90,16 @@ public partial class MainWindow : Window
     private async Task HostActionAsync(string action)
     {
         if (_session is null) return;
+        if (action == "approve-view" && !_compatibility.CanStartView)
+        {
+            SetStatus("Screen viewing unavailable", _compatibility.Detail);
+            return;
+        }
+        if (action == "approve-control" && !_compatibility.CanStartControl)
+        {
+            SetStatus("Remote control unavailable", _compatibility.Detail);
+            return;
+        }
         try { ApplyState(await _portal.HostActionAsync(_session, action)); }
         catch (Exception ex) { SetStatus("Action could not be completed", ex.Message); }
     }

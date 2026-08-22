@@ -2,6 +2,8 @@
 
 This WPF project is the **attended-support host shell**. It joins the public support-code portal, polls for role-scoped session state, and presents separate local approval controls for screen viewing and keyboard/mouse control. It contains **no screen capture or input injection implementation yet**; those are later, separately tested features.
 
+The current source includes a compatibility preflight. It refuses noninteractive desktops, Windows services, and pre-Windows-10 systems. Until the future Windows Graphics Capture and separately approved `SendInput` adapters are built and tested on a bound Windows machine, it also deliberately refuses view and control approvals rather than acknowledging capabilities that this build cannot provide.
+
 ## Security behavior
 
 The user at the Windows PC enters the support code locally. Joining does not share content. A view request activates a local screen-sharing approval panel; a control request activates a separate local remote-control panel. The host can deny either request and can end the session locally. The code deliberately has no unattended startup, background service, UAC/secure-desktop handling, or persisted credentials.
