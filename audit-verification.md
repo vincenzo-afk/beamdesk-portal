@@ -35,6 +35,9 @@
 | Linux attended policy | Tests cover Wayland portal refusal without a portal, X11 selection rules, local approval guards, and static media graphs. | Passed locally; no compositor was available. |
 | Windows attended policy | Source contains a fail-closed WPF compatibility preflight only. | **Not validated:** no Windows folder or .NET desktop environment is currently connected. |
 | Final consent lifecycle in the browser | A clean local session was created, joined by a host, approved for viewing, separately approved for control, revoked back to view-only, and ended through the operator UI. | Passed locally. The browser immediately reflected every consent transition and removed the session UI after termination. |
+| Clean-state revalidation | A new portal process passed the smoke check; a new browser session completed host join, chat, view approval, control approval, control revocation, and end; the clean browser console had no unhandled application error. | Passed locally. The expected direct-only warning remained because no TURN relay is configured. |
+| Clean Linux local-display guard | A release host run with a TCP-style `DISPLAY=localhost:10`, inert credentials, and explicit local `SHARE` consent reached the media boundary and refused capture before portal access. | Passed locally with exit code 2. |
+| Windows static project review | The WPF project targets `net8.0-windows`, enables WPF/nullable/implicit usings, and the host controller/client remain intentionally fail-closed without native adapters. | No static blocker found. **Not compiled:** this Linux sandbox has no .NET/C# compiler or connected Windows folder. |
 
 ## Defects found and corrected
 
