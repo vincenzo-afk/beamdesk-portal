@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, eventTokens, expireSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, eventTokens, expireSession, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
 
 let server;
 let base;
@@ -87,11 +87,26 @@ test("ending or expiring a session invalidates its live event credentials and bl
   assert.equal(eventTokens.has(grant.body.accessToken), false);
   const afterEnd = await api(`/api/sessions/${created.body.sessionId}`, { headers });
   assert.equal(afterEnd.response.status, 404);
-
   const replacement = await api("/api/sessions", { method: "POST" });
   const session = sessions.get(replacement.body.sessionId);
   expireSession(session, session.expiresAt);
   assert.equal(session.state, "EXPIRED");
+});
+
+test("terminal audit records are retained briefly then purged from portal memory", async () => {
+  sessions.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const headers = { "x-session-token": created.body.token };
+  const ended = await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers, body: "{}" });
+  assert.equal(ended.body.state, "ENDED");
+  const terminalSession = sessions.get(created.body.sessionId);
+  assert.ok(terminalSession.purgeTimer);
+  const retainedAudit = await api(`/api/sessions/${created.body.sessionId}/audit`, { headers });
+  assert.equal(retainedAudit.response.status, 200);
+  assert.equal(purgeTerminalSession(terminalSession), true);
+  assert.equal(sessions.has(created.body.sessionId), false);
+  const purgedAudit = await api(`/api/sessions/${created.body.sessionId}/audit`, { headers });
+  assert.equal(purgedAudit.response.status, 404);
 });
 
 test("remote input is accepted only from the operator after distinct control approval and only in a canonical form", async () => {

@@ -3,6 +3,7 @@ import express from "express";
 
 export const SESSION_TTL_MS = 10 * 60 * 1000;
 export const TURN_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
+export const TERMINAL_SESSION_RETENTION_MS = 60 * 60 * 1000;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -146,6 +147,20 @@ function scheduleExpiry(session) {
   session.expiryTimer.unref();
 }
 
+function scheduleTerminalPurge(session) {
+  session.purgeTimer = setTimeout(() => purgeTerminalSession(session), TERMINAL_SESSION_RETENTION_MS);
+  session.purgeTimer.unref();
+}
+
+export function purgeTerminalSession(session) {
+  if (!session || !["ENDED", "EXPIRED"].includes(session.state)) return false;
+  if (session.purgeTimer) clearTimeout(session.purgeTimer);
+  invalidateEventTokens(session.id);
+  inputWindows.delete(session.id);
+  sessions.delete(session.id);
+  return true;
+}
+
 export function terminateSession(session, state, event, actor) {
   if (["ENDED", "EXPIRED"].includes(session.state)) return;
   if (session.expiryTimer) clearTimeout(session.expiryTimer);
@@ -153,6 +168,7 @@ export function terminateSession(session, state, event, actor) {
   invalidateEventTokens(session.id);
   inputWindows.delete(session.id);
   closeSubscribers(session);
+  scheduleTerminalPurge(session);
 }
 
 export function expireSession(session, now = Date.now()) {
@@ -267,6 +283,7 @@ app.post("/api/sessions", (req, res) => {
     subscribers: new Set(),
     signalSequence: 0,
     expiryTimer: null,
+    purgeTimer: null,
   };
   addAudit(session, "SESSION_CREATED", "operator");
   sessions.set(session.id, session);

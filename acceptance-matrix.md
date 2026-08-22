@@ -7,7 +7,7 @@ BeamDesk is an **attended-only** product. This matrix differentiates automated v
 | One-time support-code lifecycle | Portal regression suite: creation, join, expiry, terminal cleanup | Passing | Create and join a disposable session from two separate browsers. |
 | Separate view and control approval | Portal and Linux permission-state tests | Passing | Host approves view, denies control, then approves control on a real desktop. |
 | Browser signaling/input boundary | Portal tests: consent gate, role checks, canonical input validation, terminal rejection | Passing | Validate an offer/answer/ICE exchange between two real devices. |
-| Audit and report-and-end | Portal tests: protected terminal audit and abuse-report termination | Passing | Verify audit visibility for both session roles after an intentional end. |
+| Audit, report-and-end, and retention | Portal tests: protected terminal audit, abuse-report termination, and bounded memory purge | Passing | Verify audit visibility for both session roles after an intentional end, then confirm the documented retention policy matches the production deployment. |
 | Abuse and network limits | Portal tests: active-session cap and retry metadata | Passing | Confirm trusted-proxy configuration with the production hosting provider. |
 | TURN credential issue path | Portal and Linux tests: consent gate, expiry bound, missing-secret failure | Passing, relay not yet deployed | Install CoTURN, configure the protected shared secret, and force relay-only connectivity. |
 | Linux Wayland view/control | Rust tests: portal approval gates and PipeWire/WebRTC graph construction | Build verified | Test GNOME and KDE Wayland compositor dialogs, PipeWire stream, and RemoteDesktop/EIS control. |

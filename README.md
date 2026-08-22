@@ -28,7 +28,7 @@ BeamDesk is a development-stage remote-support product built around a public one
 
 ## Safety model
 
-BeamDesk is **attended support only**. A supporter creates a short-lived code, the host joins with that code, and the host must approve viewing and then control as separate actions. Session expiry, end, and abuse reporting terminate the session and invalidate live-event credentials. The portal accepts only canonical pointer, button, keyboard, and bounded wheel envelopes after control is active. [1]
+BeamDesk is **attended support only**. A supporter creates a short-lived code, the host joins with that code, and the host must approve viewing and then control as separate actions. Session expiry, end, and abuse reporting terminate the session and invalidate live-event credentials. Terminal audit records remain available to authenticated participants for up to one hour before the in-memory session record is purged. The portal accepts only canonical pointer, button, keyboard, and bounded wheel envelopes after control is active. [1]
 
 > BeamDesk does not provide unattended access, background control, secure-desktop or UAC bypassing, lock-screen automation, or a fallback that bypasses a Wayland compositor’s portal.
 
@@ -125,7 +125,7 @@ All session routes use `x-session-token` after creation or join. Event streams r
 | `POST` | `/api/sessions` | Create a ten-minute support code and operator token. |
 | `POST` | `/api/sessions/join` | Join one unused code and receive a host token. |
 | `GET` | `/api/sessions/:id` | Read the role-scoped session state and permitted actions. |
-| `GET` | `/api/sessions/:id/audit` | Retrieve authenticated audit history, including terminal sessions. |
+| `GET` | `/api/sessions/:id/audit` | Retrieve authenticated audit history, including terminal sessions during the one-hour retention window. |
 | `POST` | `/api/sessions/:id/view-request` | Operator requests view approval. |
 | `POST` | `/api/sessions/:id/control-request` | Operator requests separate control approval. |
 | `POST` | `/api/sessions/:id/host-action` | Host approves, denies, or revokes a permitted action. |
