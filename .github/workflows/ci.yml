@@ -1,6 +1,7 @@
+---
 name: CI
-
-on:
+'on':
+  workflow_dispatch:
   push:
     branches: [master]
   pull_request:
@@ -28,7 +29,8 @@ jobs:
         run: |
           pnpm start > /tmp/beamdesk-portal.log 2>&1 &
           for attempt in $(seq 1 15); do
-            if curl --fail --silent http://127.0.0.1:4173/healthz > /dev/null; then break; fi
+            if curl --fail --silent \
+              http://127.0.0.1:4173/healthz > /dev/null; then break; fi
             sleep 1
           done
           BEAMDESK_SMOKE_URL=http://127.0.0.1:4173/ pnpm smoke
@@ -53,7 +55,9 @@ jobs:
             gstreamer1.0-nice \
             gstreamer1.0-pipewire
       - name: Install current stable Rust
-        run: rustup toolchain install stable --profile minimal && rustup default stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
       - name: Run Linux host tests
         working-directory: linux-host-agent
         run: cargo test
