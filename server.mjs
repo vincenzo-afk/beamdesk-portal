@@ -9,6 +9,10 @@ export const EVENT_TOKEN_WINDOW_MS = 60_000;
 export const MAX_EVENT_TOKENS_PER_ROLE_WINDOW = 12;
 export const SIGNAL_WINDOW_MS = 1_000;
 export const MAX_SIGNALS_PER_ROLE_WINDOW = 80;
+export const CHAT_WINDOW_MS = 10_000;
+export const MAX_CHAT_MESSAGES_PER_ROLE_WINDOW = 20;
+export const MAX_CHAT_MESSAGE_LENGTH = 1_000;
+export const MAX_CHAT_MESSAGES_PER_SESSION = 80;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const RATE_WINDOW_MS = 60_000;
 export const RATE_WINDOW_RETENTION_MS = 2 * RATE_WINDOW_MS;
@@ -44,6 +48,7 @@ const rateWindows = new Map();
 const eventTokens = new Map();
 const eventTokenWindows = new Map();
 const signalWindows = new Map();
+const chatWindows = new Map();
 const inputWindows = new Map();
 const abuseReports = [];
 
@@ -85,9 +90,11 @@ function publicSession(session, role) {
       canRequestControl: canOperate && session.state === "VIEW_ACTIVE",
       canApproveView: canHost && session.state === "VIEW_PENDING",
       canApproveControl: canHost && session.state === "CONTROL_PENDING",
+      canChat: session.state !== "CREATED",
       canEnd: canOperate || canHost,
     },
     audit: session.audit.slice(-8),
+    chat: session.chat,
   };
 }
 
@@ -113,6 +120,12 @@ function publishInput(session, envelope) {
   }
 }
 
+function publishChat(session, message) {
+  for (const subscriber of session.subscribers) {
+    subscriber.res.write(`event: chat\ndata: ${JSON.stringify(message)}\n\n`);
+  }
+}
+
 function invalidateEventTokens(sessionId) {
   for (const [accessToken, grant] of eventTokens.entries()) {
     if (grant.sessionId === sessionId) eventTokens.delete(accessToken);
@@ -123,9 +136,31 @@ function invalidateEventTokens(sessionId) {
   for (const key of signalWindows.keys()) {
     if (key.startsWith(`${sessionId}:`)) signalWindows.delete(key);
   }
+  for (const key of chatWindows.keys()) {
+    if (key.startsWith(`${sessionId}:`)) chatWindows.delete(key);
+  }
+}
+
+export function pruneRoleRateWindows(now = Date.now()) {
+  const collections = [
+    [eventTokenWindows, EVENT_TOKEN_WINDOW_MS * 2],
+    [signalWindows, SIGNAL_WINDOW_MS * 2],
+    [chatWindows, CHAT_WINDOW_MS * 2],
+  ];
+  let pruned = 0;
+  for (const [collection, retentionMs] of collections) {
+    for (const [key, window] of collection.entries()) {
+      if (now - window.startedAt > retentionMs) {
+        collection.delete(key);
+        pruned += 1;
+      }
+    }
+  }
+  return pruned;
 }
 
 function eventTokenRateLimited(sessionId, role, now = Date.now()) {
+  pruneRoleRateWindows(now);
   const key = `${sessionId}:${role}`;
   const window = eventTokenWindows.get(key) || { startedAt: now, count: 0 };
   if (now - window.startedAt >= EVENT_TOKEN_WINDOW_MS) {
@@ -138,6 +173,7 @@ function eventTokenRateLimited(sessionId, role, now = Date.now()) {
 }
 
 function signalRateLimited(sessionId, role, now = Date.now()) {
+  pruneRoleRateWindows(now);
   const key = `${sessionId}:${role}`;
   const window = signalWindows.get(key) || { startedAt: now, count: 0 };
   if (now - window.startedAt >= SIGNAL_WINDOW_MS) {
@@ -147,6 +183,19 @@ function signalRateLimited(sessionId, role, now = Date.now()) {
   window.count += 1;
   signalWindows.set(key, window);
   return window.count > MAX_SIGNALS_PER_ROLE_WINDOW;
+}
+
+function chatRateLimited(sessionId, role, now = Date.now()) {
+  pruneRoleRateWindows(now);
+  const key = `${sessionId}:${role}`;
+  const window = chatWindows.get(key) || { startedAt: now, count: 0 };
+  if (now - window.startedAt >= CHAT_WINDOW_MS) {
+    window.startedAt = now;
+    window.count = 0;
+  }
+  window.count += 1;
+  chatWindows.set(key, window);
+  return window.count > MAX_CHAT_MESSAGES_PER_ROLE_WINDOW;
 }
 
 export function closeSubscribers(session) {
@@ -177,6 +226,13 @@ function validInputPayload(payload) {
     if (event.kind === "wheel") return Number.isFinite(event.deltaX) && Number.isFinite(event.deltaY) && Math.abs(event.deltaX) <= 1000 && Math.abs(event.deltaY) <= 1000;
     return false;
   });
+}
+
+function normalizedChatText(payload) {
+  if (!payload || typeof payload.text !== "string") return null;
+  const text = payload.text.replace(/\r\n?/g, "\n").trim();
+  if (!text || text.length > MAX_CHAT_MESSAGE_LENGTH) return null;
+  return text;
 }
 
 function transition(session, state, event, actor) {
@@ -335,6 +391,7 @@ app.post("/api/sessions", (req, res) => {
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
     audit: [],
+    chat: [],
     subscribers: new Set(),
     signalSequence: 0,
     lastInputSequence: -1,
@@ -367,6 +424,12 @@ app.get("/api/sessions/:id/audit", (req, res) => {
   const context = requireAuditSession(req, res);
   if (!context) return;
   return res.json({ sessionId: context.session.id, state: context.session.state, events: context.session.audit });
+});
+
+app.get("/api/sessions/:id/chat", (req, res) => {
+  const context = requireAuditSession(req, res);
+  if (!context) return;
+  return res.json({ sessionId: context.session.id, state: context.session.state, messages: context.session.chat });
 });
 
 app.get("/api/sessions/:id/ice-config", (req, res) => {
@@ -441,6 +504,20 @@ app.post("/api/sessions/:id/signal", (req, res) => {
   return res.status(202).json({ accepted: true, sequence: envelope.sequence });
 });
 
+app.post("/api/sessions/:id/chat", (req, res) => {
+  const context = requireSession(req, res);
+  if (!context) return;
+  if (context.session.state === "CREATED") return res.status(409).json({ error: "Session chat is available after the host joins the support code." });
+  const text = normalizedChatText(req.body);
+  if (!text) return res.status(400).json({ error: `Chat messages must contain between 1 and ${MAX_CHAT_MESSAGE_LENGTH} characters.` });
+  if (chatRateLimited(context.session.id, context.role)) return sendRateLimit(res, "Session chat is temporarily rate-limited.", Math.ceil(CHAT_WINDOW_MS / 1000));
+  const message = { id: crypto.randomUUID(), at: Date.now(), from: context.role, text };
+  context.session.chat.push(message);
+  if (context.session.chat.length > MAX_CHAT_MESSAGES_PER_SESSION) context.session.chat.splice(0, context.session.chat.length - MAX_CHAT_MESSAGES_PER_SESSION);
+  publishChat(context.session, message);
+  return res.status(201).json({ message });
+});
+
 app.post("/api/sessions/:id/input", (req, res) => {
   const context = requireSession(req, res);
   if (!context) return;
@@ -496,7 +573,7 @@ app.use((error, _req, res, next) => {
   return res.status(500).json({ error: "The portal could not process this request." });
 });
 
-export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, signalWindows, abuseReports };
+export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, signalWindows, chatWindows, abuseReports };
 
 if (process.env.RUN_PORTAL_SERVER === "true") {
   const port = Number(process.env.PORT || 4173);

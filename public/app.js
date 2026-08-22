@@ -55,6 +55,25 @@ function screen(template) {
   app.innerHTML = template;
 }
 
+function chatMessageMarkup(message) {
+  const author = message.from === "operator" ? "Operator" : "Host";
+  return `<li class="chat-message chat-message-${escapeHtml(message.from)}" data-message-id="${escapeHtml(message.id)}"><div><strong>${author}</strong><time>${new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div><p>${escapeHtml(message.text).replaceAll("\n", "<br>")}</p></li>`;
+}
+
+function appendChatMessage(message) {
+  const list = document.querySelector("#chat-messages");
+  if (!list || !message?.id || list.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`)) return;
+  list.querySelector(".chat-empty")?.remove();
+  list.insertAdjacentHTML("beforeend", chatMessageMarkup(message));
+  list.scrollTop = list.scrollHeight;
+}
+
+function chatPanelMarkup(session, messages) {
+  if (!session.capabilities.canChat) return `<section class="chat-panel" aria-labelledby="chat-title"><div class="chat-heading"><div><p class="eyebrow">SESSION CHAT</p><h2 id="chat-title">Keep support clear</h2></div></div><p class="chat-unavailable">Chat opens once the host has joined this one-time support code.</p></section>`;
+  const transcript = messages.map(chatMessageMarkup).join("") || '<li class="chat-empty">No messages yet. Both people in this session can chat here.</li>';
+  return `<section class="chat-panel" aria-labelledby="chat-title"><div class="chat-heading"><div><p class="eyebrow">SESSION CHAT</p><h2 id="chat-title">Keep support clear</h2></div><span class="chat-retention">Private to this session</span></div><ol id="chat-messages" class="chat-messages" aria-live="polite">${transcript}</ol><form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-text">Message</label><textarea id="chat-text" maxlength="1000" rows="3" placeholder="Write a support message…" required></textarea><p id="chat-error" class="chat-error" role="alert"></p><button id="chat-send" class="secondary" type="submit">Send message</button></form></section>`;
+}
+
 function home(error = "") {
   stopEvents();
   clearViewer();
@@ -110,11 +129,13 @@ function renderSession(session) {
   const isOperator = current.role === "operator";
   const viewGranted = ["VIEW_ACTIVE", "CONTROL_PENDING", "CONTROL_ACTIVE"].includes(session.state);
   const controlGranted = isOperator && session.state === "CONTROL_ACTIVE";
+  const chatMessages = Array.isArray(session.chat) ? session.chat : [];
   clearInputBindings();
   const viewerMarkup = isOperator && viewGranted
     ? `<div class="stream-placeholder approved viewer-surface ${controlGranted ? "control-enabled" : ""}"><video id="remote-view" autoplay playsinline tabindex="0" aria-label="Approved host display stream"></video><p class="viewer-note">${controlGranted ? "Remote control active — click the view to focus input. The host can pause control at any time." : "Awaiting the host’s encrypted display stream."}</p></div>`
     : `<div class="stream-placeholder"><span class="screen-icon">▣</span><p>${viewGranted ? "The host may share a display only through the signed BeamDesk host app." : "No screen is being shared."}</p></div>`;
   screen(`<section class="session-layout"><div class="session-main"><p class="eyebrow">${isOperator ? "OPERATOR CONSOLE" : "HOST JOIN"}</p><h1>${escapeHtml(title)}</h1><p class="lede">${escapeHtml(description)}</p>${isOperator && current.code ? `<div class="code-box"><p>Support code</p><strong>${escapeHtml(current.code)}</strong><button id="copy" class="text-button">Copy code</button></div>` : ""}${viewerMarkup}</div><aside class="card status-card"><p class="eyebrow">SESSION STATUS</p><div class="status-line"><span class="pulse ${session.state.includes("ACTIVE") ? "active" : ""}"></span><strong>${escapeHtml(session.state.replace("_", " "))}</strong></div><p class="expires">Expires ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p><div class="actions">${session.capabilities.canRequestView ? '<button id="request-view" class="primary">Request screen view</button>' : ""}${session.capabilities.canRequestControl ? '<button id="request-control" class="primary">Request remote control</button>' : ""}${session.capabilities.canApproveView ? '<button id="approve-view" class="primary">Approve screen view</button><button id="deny-view" class="secondary">Decline</button>' : ""}${session.capabilities.canApproveControl ? '<button id="approve-control" class="primary">Approve remote control</button><button id="deny-control" class="secondary">Keep view only</button>' : ""}${session.state === "CONTROL_ACTIVE" && !isOperator ? '<button id="revoke" class="secondary danger">Pause remote control</button>' : ""}<button id="audit-history" class="text-button">View full audit history</button><button id="report-abuse" class="text-button danger-text">Report a security concern and end</button><button id="end" class="text-button">End session</button></div><div class="audit"><p>Recent events</p>${session.audit.map((event) => `<small>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${escapeHtml(event.event.replaceAll("_", " "))}</small>`).join("")}</div></aside></section>`);
+  document.querySelector(".status-card")?.insertAdjacentHTML("beforeend", chatPanelMarkup(session, chatMessages));
   document.querySelector("#copy")?.addEventListener("click", () => navigator.clipboard.writeText(current.code));
   document.querySelector("#request-view")?.addEventListener("click", () => action("view-request"));
   document.querySelector("#request-control")?.addEventListener("click", () => action("control-request"));
@@ -126,8 +147,30 @@ function renderSession(session) {
   document.querySelector("#audit-history")?.addEventListener("click", showAuditHistory);
   document.querySelector("#report-abuse")?.addEventListener("click", reportSecurityConcern);
   document.querySelector("#end")?.addEventListener("click", endSession);
+  document.querySelector("#chat-form")?.addEventListener("submit", sendChat);
   if (isOperator && viewGranted) startViewer(controlGranted);
   else clearViewer();
+}
+
+async function sendChat(event) {
+  event.preventDefault();
+  const input = document.querySelector("#chat-text");
+  const error = document.querySelector("#chat-error");
+  const submit = document.querySelector("#chat-send");
+  const text = input?.value || "";
+  if (!text.trim()) return;
+  if (error) error.textContent = "";
+  if (submit) submit.disabled = true;
+  try {
+    const response = await request(`/api/sessions/${current.id}/chat`, { method: "POST", body: JSON.stringify({ text }) });
+    appendChatMessage(response.message);
+    input.value = "";
+    input.focus();
+  } catch (requestError) {
+    if (error) error.textContent = requestError.message;
+  } finally {
+    if (submit) submit.disabled = false;
+  }
 }
 
 async function sendSignal(kind, payload) {
@@ -236,6 +279,7 @@ async function subscribeToSession() {
     eventSource = new EventSource(`/api/sessions/${current.id}/events?access=${encodeURIComponent(grant.accessToken)}`);
     eventSource.addEventListener("session", (event) => renderSession(JSON.parse(event.data)));
     eventSource.addEventListener("signal", (event) => handleSignal(JSON.parse(event.data)).catch((error) => console.warn("Could not apply host signaling", error)));
+    eventSource.addEventListener("chat", (event) => appendChatMessage(JSON.parse(event.data)));
   } catch (error) { console.warn("Live session updates are unavailable", error); }
 }
 

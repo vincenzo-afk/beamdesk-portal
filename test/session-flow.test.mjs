@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, closeSubscribers, eventTokens, eventTokenWindows, expireSession, pruneRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, chatWindows, closeSubscribers, eventTokens, eventTokenWindows, expireSession, pruneRateWindows, pruneRoleRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
 
 let server;
 let base;
@@ -296,6 +296,71 @@ test("TURN fails closed when its server secret is not configured", async () => {
     if (oldUrls === undefined) delete process.env.BEAMDESK_TURN_URLS; else process.env.BEAMDESK_TURN_URLS = oldUrls;
     if (oldSecret === undefined) delete process.env.BEAMDESK_TURN_SHARED_SECRET; else process.env.BEAMDESK_TURN_SHARED_SECRET = oldSecret;
   }
+});
+
+test("session chat is role-scoped, live-delivered, bounded, rate-limited, and retained only with the terminal session record", async () => {
+  sessions.clear();
+  chatWindows.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const operatorHeaders = { "x-session-token": created.body.token, "content-type": "application/json" };
+  const beforeJoin = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ text: "Can you see this?" }) });
+  assert.equal(beforeJoin.response.status, 409);
+
+  const joined = await api("/api/sessions/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: created.body.code }) });
+  const hostHeaders = { "x-session-token": joined.body.token, "content-type": "application/json" };
+  const session = sessions.get(created.body.sessionId);
+  const liveEvents = [];
+  session.subscribers.add({ res: { write: (chunk) => liveEvents.push(chunk), end: () => {} }, heartbeatTimer: null });
+
+  const sent = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ text: "  Hello host\r\nCan you see the screen?  " }) });
+  assert.equal(sent.response.status, 201);
+  assert.equal(sent.body.message.from, "operator");
+  assert.equal(sent.body.message.text, "Hello host\nCan you see the screen?");
+  assert.ok(liveEvents.some((chunk) => chunk.includes("event: chat") && chunk.includes("Hello host")));
+
+  const reply = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ text: "Yes, I can." }) });
+  assert.equal(reply.response.status, 201);
+  const transcript = await api(`/api/sessions/${created.body.sessionId}/chat`, { headers: hostHeaders });
+  assert.equal(transcript.response.status, 200);
+  assert.deepEqual(transcript.body.messages.map((message) => message.text), ["Hello host\nCan you see the screen?", "Yes, I can."]);
+  const unauthenticated = await api(`/api/sessions/${created.body.sessionId}/chat`);
+  assert.equal(unauthenticated.response.status, 403);
+  const blank = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ text: "   " }) });
+  assert.equal(blank.response.status, 400);
+
+  session.chat = Array.from({ length: 80 }, (_, index) => ({ id: `existing-${index}`, at: index, from: "host", text: `Existing ${index}` }));
+  const bounded = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ text: "Newest" }) });
+  assert.equal(bounded.response.status, 201);
+  assert.equal(session.chat.length, 80);
+  assert.equal(session.chat[0].id, "existing-1");
+  assert.equal(session.chat.at(-1).text, "Newest");
+
+  for (let index = 0; index < 19; index += 1) {
+    const message = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ text: `Message ${index}` }) });
+    assert.equal(message.response.status, 201);
+  }
+  const limited = await api(`/api/sessions/${created.body.sessionId}/chat`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ text: "Message over limit" }) });
+  assert.equal(limited.response.status, 429);
+  assert.equal(limited.response.headers.get("retry-after"), "10");
+  assert.equal(chatWindows.has(`${created.body.sessionId}:operator`), true);
+
+  await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers: operatorHeaders, body: "{}" });
+  const retained = await api(`/api/sessions/${created.body.sessionId}/chat`, { headers: hostHeaders });
+  assert.equal(retained.response.status, 200);
+  assert.equal(retained.body.state, "ENDED");
+  const terminalSession = sessions.get(created.body.sessionId);
+  assert.equal(purgeTerminalSession(terminalSession), true);
+  const purged = await api(`/api/sessions/${created.body.sessionId}/chat`, { headers: hostHeaders });
+  assert.equal(purged.response.status, 404);
+});
+
+test("stale role-scoped rate windows are pruned for idle sessions", () => {
+  chatWindows.clear();
+  chatWindows.set("old:operator", { startedAt: 0, count: 1 });
+  chatWindows.set("current:host", { startedAt: 15_000, count: 1 });
+  assert.equal(pruneRoleRateWindows(20_001), 1);
+  assert.equal(chatWindows.has("old:operator"), false);
+  assert.equal(chatWindows.has("current:host"), true);
 });
 
 test("session creation is capped per network and an abuse report terminates the current session", async () => {

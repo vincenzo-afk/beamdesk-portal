@@ -6,7 +6,7 @@ BeamDesk is a development-stage remote-support product built around a public one
 
 | Project status | Current evidence |
 |---|---|
-| Portal | Node.js/Express implementation with session lifecycle, audit, rate controls, WebRTC signaling relay, input validation, and health checks. |
+| Portal | Node.js/Express implementation with session lifecycle, real-time role-scoped chat, audit, rate controls, WebRTC signaling relay, input validation, and health checks. |
 | Linux host | Rust implementation with Wayland portal/PipeWire and guarded X11 foundations; real interactive-desktop acceptance tests remain required. |
 | Windows host | WPF approval shell is present. Windows Graphics Capture and attended `SendInput` validation require the connected Windows 10/11 development environment. |
 | License | [MIT](LICENSE). |
@@ -28,7 +28,7 @@ BeamDesk is a development-stage remote-support product built around a public one
 
 ## Safety model
 
-BeamDesk is **attended support only**. A supporter creates a short-lived code, the host joins with that code, and the host must approve viewing and then control as separate actions. Session expiry, end, and abuse reporting terminate the session and invalidate live-event credentials. Terminal audit records remain available to authenticated participants for up to one hour before the in-memory session record is purged. The portal accepts only canonical pointer, button, keyboard, and bounded wheel envelopes after control is active. [1]
+BeamDesk is **attended support only**. A supporter creates a short-lived code, the host joins with that code, and the host must approve viewing and then control as separate actions. Both authenticated participants can use the session chat after the host joins; messages are capped in size and rate, bounded to the latest 80 messages, delivered only to the role-scoped live-session subscribers, and purged with the one-hour terminal session record. Session expiry, end, and abuse reporting terminate the session and invalidate live-event credentials. Terminal audit records remain available to authenticated participants for up to one hour before the in-memory session record is purged. The portal accepts only canonical pointer, button, keyboard, and bounded wheel envelopes after control is active. [1]
 
 > BeamDesk does not provide unattended access, background control, secure-desktop or UAC bypassing, lock-screen automation, or a fallback that bypasses a Wayland compositor’s portal.
 
@@ -36,7 +36,7 @@ BeamDesk is **attended support only**. A supporter creates a short-lived code, t
 
 ```mermaid
 flowchart LR
-  O[Operator browser] -->|HTTPS: code, requests, audit| P[BeamDesk Express portal]
+	O[Operator browser] -->|HTTPS: code, requests, chat, audit| P[BeamDesk Express portal]
   H[Attended host agent] -->|HTTPS/SSE: join, approval, signaling| P
   P -->|role-scoped SSE| O
   P -->|role-scoped SSE| H
@@ -126,6 +126,8 @@ All session routes use `x-session-token` after creation or join. Event streams r
 | `POST` | `/api/sessions/join` | Join one unused code and receive a host token. |
 | `GET` | `/api/sessions/:id` | Read the role-scoped session state and permitted actions. |
 | `GET` | `/api/sessions/:id/audit` | Retrieve authenticated audit history, including terminal sessions during the one-hour retention window. |
+| `GET` | `/api/sessions/:id/chat` | Retrieve the authenticated, bounded session transcript, including terminal sessions during the one-hour retention window. |
+| `POST` | `/api/sessions/:id/chat` | Send a size- and rate-limited support message after the host joins. Live delivery uses the existing role-scoped SSE channel. |
 | `POST` | `/api/sessions/:id/view-request` | Operator requests view approval. |
 | `POST` | `/api/sessions/:id/control-request` | Operator requests separate control approval. |
 | `POST` | `/api/sessions/:id/host-action` | Host approves, denies, or revokes a permitted action. |
@@ -146,7 +148,7 @@ cd ..
 BEAMDESK_SMOKE_URL="http://127.0.0.1:4173/" pnpm smoke
 ```
 
-The test suites cover portal authorization, approval state transitions, session expiry, audit access, input validation, abuse limits, TURN failure handling, Linux capability selection, input mapping, and native media-graph construction. They do not prove interactive desktop integration. Use the [acceptance matrix](acceptance-matrix.md) for required Windows, Wayland, X11, and relay real-device tests.
+The test suites cover portal authorization, chat authorization and retention, approval state transitions, session expiry, audit access, input validation, abuse limits, TURN failure handling, Linux capability selection, input mapping, and native media-graph construction. They do not prove interactive desktop integration. Use the [acceptance matrix](acceptance-matrix.md) for required Windows, Wayland, X11, and relay real-device tests.
 
 ## Deployment
 
@@ -157,7 +159,7 @@ The test suites cover portal authorization, approval state transitions, session 
 ```text
 .
 ├── public/                  # Browser operator and host portal UI
-├── server.mjs               # Express session, audit, signaling, and input relay
+├── server.mjs               # Express session, chat, audit, signaling, and input relay
 ├── test/                    # Node built-in portal regression tests
 ├── scripts/smoke.mjs        # Health-check smoke utility
 ├── linux-host-agent/        # Rust Wayland/X11 host implementation
