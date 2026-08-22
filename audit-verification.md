@@ -8,7 +8,7 @@
 
 | Area | Evidence run | Result | Meaning |
 |---|---|---|---|
-| Portal protocol and safety | `pnpm test` | 26 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, TURN credential routes, safe API misses, replayed event credentials, expired-code cleanup, and bounded audit records passed local regression coverage. |
+| Portal protocol and safety | `pnpm test` | 28 passing tests | The attended session lifecycle, authorization boundaries, audit, chat, signaling, input, abuse, TURN credential routes, safe API misses, replayed event credentials, expired-code cleanup, bounded audit records, stale-event credential pruning, and terminal capability removal passed local regression coverage. |
 | Browser session UI | Local browser session: create code, join host, send chat | Passed | The UI hid chat before host join, enabled it after join, submitted a message, rendered the transcript, and produced no client-side console error. |
 | Portal operational checks | Syntax checks, fresh `/healthz`, `pnpm smoke`, direct HTTP payload probe | Passed | The start path, readiness endpoint, direct-only fallback, and safe oversized-payload response were verified against a fresh local process. |
 | Production JavaScript dependency audit | `pnpm audit --prod` | No known vulnerabilities reported | The installed production dependency graph had no advisory reported by the package registry at audit time. |
@@ -38,6 +38,9 @@
 | Clean-state revalidation | A new portal process passed the smoke check; a new browser session completed host join, chat, view approval, control approval, control revocation, and end; the clean browser console had no unhandled application error. | Passed locally. The expected direct-only warning remained because no TURN relay is configured. |
 | Clean Linux local-display guard | A release host run with a TCP-style `DISPLAY=localhost:10`, inert credentials, and explicit local `SHARE` consent reached the media boundary and refused capture before portal access. | Passed locally with exit code 2. |
 | Windows static project review | The WPF project targets `net8.0-windows`, enables WPF/nullable/implicit usings, and the host controller/client remain intentionally fail-closed without native adapters. | No static blocker found. **Not compiled:** this Linux sandbox has no .NET/C# compiler or connected Windows folder. |
+| Independent portal failure-path probe | A fresh in-process probe covered health headers, malformed JSON, safe API misses, case-insensitive code join, terminal SSE closure, terminal credential rejection, and expired event-credential retention. | Passed locally. Expired event credentials remained bounded when a new live-event credential was issued. |
+| Browser terminal-event recovery | A browser operator session was ended by a distinct host session over SSE. | Passed locally. The browser cleared media, credentials, subscriptions, and stale chat/end controls, then returned to the safe home screen with an explanatory message and no console error. |
+| Additional Linux refusal paths | Release-host probes covered no interactive display, unavailable Wayland portal, TCP-style X11 display, and an unavailable local X11 display. | Passed locally. Every refusal exited with code 2 before capture, input, or normal portal activity. |
 
 ## Defects found and corrected
 
@@ -59,6 +62,8 @@
 | TCP-style X11 display strings were accepted by the environment check despite the documented local-display-only policy. | X11 capability detection and the media sender now accept only inherited local `:display` or `unix:display` forms and reject TCP-style display names before capture. | Linux unit checks and a release-host guarded `DISPLAY=localhost:10` run passed with safe exit code 2. |
 | Local Linux-host shutdown could leave a nonterminal portal session until normal expiry. | A joined host now sends a best-effort terminal action during local teardown while preserving fail-closed local cleanup on network failure. | Linux unit, lint, and release-build checks passed. |
 | Windows portal request failures could assume JSON and terminal cleanup had unhandled action paths. | The WPF client now has a non-JSON error fallback and the shell catches end-session failures, clears stale session state, and reports a safe status. | Source-reviewed only: .NET compilation requires the connected Windows desktop environment. |
+| Unused expired event credentials could accumulate in the portal map until a terminal session purge. | Event-credential issuance and stream validation now prune expired grants before accepting new live-event work. | `issuing a fresh event credential prunes unused expired grants`; independent probe retained one current grant after refresh. |
+| A host-initiated terminal SSE event left the browser on a stale terminal session screen with chat and end controls visible. | The browser now immediately clears terminal session state and returns home; terminal server snapshots also advertise no chat or end capability. | `terminal live-session snapshots expose no further chat or end capability` plus a live browser host-end check. |
 
 ## Required real-environment validation
 

@@ -67,6 +67,24 @@ test("live-update credentials are single-use and scoped to an authenticated sess
   assert.ok(eventResponse === null || eventResponse.status === 200);
 });
 
+test("terminal live-session snapshots expose no further chat or end capability", async () => {
+  const created = await api("/api/sessions", { method: "POST" });
+  const headers = { "x-session-token": created.body.token };
+  const grant = await api(`/api/sessions/${created.body.sessionId}/event-token`, { method: "POST", headers });
+  const stream = await fetch(`${base}/api/sessions/${created.body.sessionId}/events?access=${grant.body.accessToken}`);
+  const reader = stream.body.getReader();
+  await reader.read();
+
+  const ended = await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers, body: "{}" });
+  assert.equal(ended.response.status, 200);
+  const terminal = await reader.read();
+  const snapshot = JSON.parse(new TextDecoder().decode(terminal.value).match(/data: (.+)\n/)[1]);
+  assert.equal(snapshot.state, "ENDED");
+  assert.equal(snapshot.capabilities.canChat, false);
+  assert.equal(snapshot.capabilities.canEnd, false);
+  await reader.read();
+});
+
 test("live-event credential issuance is bounded per role and cleared with terminal session state", async () => {
   sessions.clear();
   eventTokenWindows.clear();

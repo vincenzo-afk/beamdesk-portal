@@ -147,6 +147,13 @@ async function sessionView() {
 }
 
 function renderSession(session) {
+  if (["ENDED", "EXPIRED"].includes(session.state)) {
+    clearViewer();
+    stopEvents();
+    saveCurrent(null);
+    home("This support session has ended or expired.");
+    return;
+  }
   const [title, description] = stateCopy(session.state, current.role);
   const isOperator = current.role === "operator";
   const viewGranted = ["VIEW_ACTIVE", "CONTROL_PENDING", "CONTROL_ACTIVE"].includes(session.state);

@@ -65,6 +65,20 @@ test("live-event credentials cannot be replayed against another session or after
   assert.equal(expired.response.status, 403);
 });
 
+test("issuing a fresh event credential prunes unused expired grants", async () => {
+  const created = await api("/api/sessions", { method: "POST" });
+  const headers = { "x-session-token": created.body.token };
+  const expiredGrant = await api(`/api/sessions/${created.body.sessionId}/event-token`, { method: "POST", headers });
+  eventTokens.get(expiredGrant.body.accessToken).expiresAt = Date.now() - 1;
+
+  const freshGrant = await api(`/api/sessions/${created.body.sessionId}/event-token`, { method: "POST", headers });
+  assert.equal(freshGrant.response.status, 200);
+  assert.equal(eventTokens.has(expiredGrant.body.accessToken), false);
+  assert.equal(eventTokens.has(freshGrant.body.accessToken), true);
+  const ended = await api(`/api/sessions/${created.body.sessionId}/end`, { method: "POST", headers });
+  assert.equal(ended.response.status, 200);
+});
+
 test("invalid TURN HMAC configuration fails closed without producing a server error", async () => {
   const priorUrls = process.env.BEAMDESK_TURN_URLS;
   const priorSecret = process.env.BEAMDESK_TURN_SHARED_SECRET;

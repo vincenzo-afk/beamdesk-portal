@@ -81,6 +81,7 @@ function safeTokenMatch(candidate, expected) {
 function publicSession(session, role) {
   const canOperate = role === "operator";
   const canHost = role === "host";
+  const isTerminal = ["ENDED", "EXPIRED"].includes(session.state);
   return {
     sessionId: session.id,
     state: session.state,
@@ -91,8 +92,8 @@ function publicSession(session, role) {
       canRequestControl: canOperate && session.state === "VIEW_ACTIVE",
       canApproveView: canHost && session.state === "VIEW_PENDING",
       canApproveControl: canHost && session.state === "CONTROL_PENDING",
-      canChat: session.state !== "CREATED",
-      canEnd: canOperate || canHost,
+      canChat: !isTerminal && session.state !== "CREATED",
+      canEnd: !isTerminal && (canOperate || canHost),
     },
     audit: session.audit.slice(-8),
     chat: session.chat,
@@ -143,6 +144,17 @@ function invalidateEventTokens(sessionId) {
   for (const key of chatWindows.keys()) {
     if (key.startsWith(`${sessionId}:`)) chatWindows.delete(key);
   }
+}
+
+export function pruneExpiredEventTokens(now = Date.now()) {
+  let pruned = 0;
+  for (const [accessToken, grant] of eventTokens.entries()) {
+    if (grant.expiresAt <= now) {
+      eventTokens.delete(accessToken);
+      pruned += 1;
+    }
+  }
+  return pruned;
 }
 
 export function pruneRoleRateWindows(now = Date.now()) {
@@ -465,6 +477,7 @@ app.get("/api/sessions/:id/ice-config", (req, res) => {
 app.post("/api/sessions/:id/event-token", (req, res) => {
   const context = requireSession(req, res);
   if (!context) return;
+  pruneExpiredEventTokens();
   if (eventTokenRateLimited(context.session.id, context.role)) return sendRateLimit(res, "Please wait before requesting another live-event credential.", Math.ceil(EVENT_TOKEN_WINDOW_MS / 1000));
   const expiresAt = Math.min(context.session.expiresAt, Date.now() + 60_000);
   const accessToken = makeToken();
@@ -473,6 +486,7 @@ app.post("/api/sessions/:id/event-token", (req, res) => {
 });
 
 app.get("/api/sessions/:id/events", (req, res) => {
+  pruneExpiredEventTokens();
   const accessToken = String(req.query.access || "");
   const grant = eventTokens.get(accessToken);
   const session = sessions.get(req.params.id);
