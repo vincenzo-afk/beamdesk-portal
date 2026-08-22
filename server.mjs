@@ -7,6 +7,8 @@ export const TERMINAL_SESSION_RETENTION_MS = 60 * 60 * 1000;
 export const EVENT_HEARTBEAT_MS = 25_000;
 export const EVENT_TOKEN_WINDOW_MS = 60_000;
 export const MAX_EVENT_TOKENS_PER_ROLE_WINDOW = 12;
+export const SIGNAL_WINDOW_MS = 1_000;
+export const MAX_SIGNALS_PER_ROLE_WINDOW = 80;
 export const MAX_ACTIVE_SESSIONS_PER_IP = 4;
 export const RATE_WINDOW_MS = 60_000;
 export const RATE_WINDOW_RETENTION_MS = 2 * RATE_WINDOW_MS;
@@ -41,6 +43,7 @@ const sessions = new Map();
 const rateWindows = new Map();
 const eventTokens = new Map();
 const eventTokenWindows = new Map();
+const signalWindows = new Map();
 const inputWindows = new Map();
 const abuseReports = [];
 
@@ -117,6 +120,9 @@ function invalidateEventTokens(sessionId) {
   for (const key of eventTokenWindows.keys()) {
     if (key.startsWith(`${sessionId}:`)) eventTokenWindows.delete(key);
   }
+  for (const key of signalWindows.keys()) {
+    if (key.startsWith(`${sessionId}:`)) signalWindows.delete(key);
+  }
 }
 
 function eventTokenRateLimited(sessionId, role, now = Date.now()) {
@@ -129,6 +135,18 @@ function eventTokenRateLimited(sessionId, role, now = Date.now()) {
   window.count += 1;
   eventTokenWindows.set(key, window);
   return window.count > MAX_EVENT_TOKENS_PER_ROLE_WINDOW;
+}
+
+function signalRateLimited(sessionId, role, now = Date.now()) {
+  const key = `${sessionId}:${role}`;
+  const window = signalWindows.get(key) || { startedAt: now, count: 0 };
+  if (now - window.startedAt >= SIGNAL_WINDOW_MS) {
+    window.startedAt = now;
+    window.count = 0;
+  }
+  window.count += 1;
+  signalWindows.set(key, window);
+  return window.count > MAX_SIGNALS_PER_ROLE_WINDOW;
 }
 
 export function closeSubscribers(session) {
@@ -416,6 +434,7 @@ app.post("/api/sessions/:id/signal", (req, res) => {
   const kind = String(req.body?.kind || "");
   const payload = req.body?.payload;
   if (!["offer", "answer", "candidate"].includes(kind) || !payload || typeof payload !== "object") return res.status(400).json({ error: "A valid opaque WebRTC signaling envelope is required." });
+  if (signalRateLimited(context.session.id, context.role)) return res.status(429).json({ error: "WebRTC signaling is temporarily rate-limited." });
   const recipientRole = context.role === "operator" ? "host" : "operator";
   const envelope = { sequence: ++context.session.signalSequence, from: context.role, kind, payload, expiresAt: context.session.expiresAt };
   publishSignal(context.session, recipientRole, envelope);
@@ -477,7 +496,7 @@ app.use((error, _req, res, next) => {
   return res.status(500).json({ error: "The portal could not process this request." });
 });
 
-export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, abuseReports };
+export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, signalWindows, abuseReports };
 
 if (process.env.RUN_PORTAL_SERVER === "true") {
   const port = Number(process.env.PORT || 4173);

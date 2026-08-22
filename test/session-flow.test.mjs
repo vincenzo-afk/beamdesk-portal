@@ -112,6 +112,24 @@ test("opaque WebRTC signals are refused before view approval and accepted only f
   assert.equal(signal.body.sequence, 1);
 });
 
+test("WebRTC signaling is bounded per consented participant role", async () => {
+  sessions.clear();
+  const created = await api("/api/sessions", { method: "POST" });
+  const operatorHeaders = { "x-session-token": created.body.token, "content-type": "application/json" };
+  const joined = await api("/api/sessions/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: created.body.code }) });
+  const hostHeaders = { "x-session-token": joined.body.token, "content-type": "application/json" };
+  await api(`/api/sessions/${created.body.sessionId}/view-request`, { method: "POST", headers: operatorHeaders });
+  await api(`/api/sessions/${created.body.sessionId}/host-action`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ action: "approve-view" }) });
+  for (let index = 0; index < 80; index += 1) {
+    const relayed = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ kind: "candidate", payload: { candidate: `candidate-${index}` } }) });
+    assert.equal(relayed.response.status, 202);
+  }
+  const operatorLimited = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ kind: "candidate", payload: { candidate: "candidate-over-limit" } }) });
+  assert.equal(operatorLimited.response.status, 429);
+  const hostStillAllowed = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ kind: "answer", payload: { type: "answer" } }) });
+  assert.equal(hostStillAllowed.response.status, 202);
+});
+
 test("ending or expiring a session invalidates its live event credentials and blocks subsequent access", async () => {
   sessions.clear();
   eventTokens.clear();
