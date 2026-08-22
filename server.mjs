@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import express from "express";
+import { fileURLToPath } from "node:url";
 
 export const SESSION_TTL_MS = 10 * 60 * 1000;
 export const TURN_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
@@ -616,7 +617,7 @@ app.use((error, _req, res, next) => {
 
 export { app, sessions, codeDigest, eventTokens, eventTokenWindows, rateWindows, signalWindows, chatWindows, abuseReports };
 
-if (process.env.RUN_PORTAL_SERVER === "true") {
+if (process.env.RUN_PORTAL_SERVER === "true" || process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 4173);
   app.listen(port, () => console.log(`BeamDesk portal available on port ${port}`));
 }

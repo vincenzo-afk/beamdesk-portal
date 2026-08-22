@@ -16,6 +16,9 @@
 | Linux host quality and build | `cargo clippy --all-targets -- -D warnings`; `cargo build --release` | Passed | Strict linting and optimized compilation completed successfully. |
 | Linux media prerequisites | `gst-inspect-1.0` for `webrtcbin`, `pipewiresrc`, and `ximagesrc` | Passed | The required local GStreamer element factories were discoverable. |
 | Unsupported Linux environment | Release host run with invalid X11 and missing Wayland portal inputs | Passed | The current host refused capture and control with exit code 2 and did not fall back to an unsafe backend. |
+| Windows device host foundation | Windows 10 PC: .NET 8 Release build, WPF launch, and temporary STA UI harness | Passed | The WPF host compiled without warnings, launched, locally rejected a blank code, refused view approval without a capture adapter, exposed local revoke control only for an active-control state, and cleared terminal UI state. |
+| Windows portal interoperability | Windows 10 PC: `PortalClient` lifecycle harness against a local portal | Passed | Host join, state reads, view approval, control approval, control revocation, and end completed through the Windows client without response-deserialization failures. |
+| Cross-platform portal launch | Windows 10 PC and Linux: `pnpm start` with no pre-set runtime flag | Passed | The package launcher set its own explicit runtime flag and exposed the expected local health endpoint on both platforms. |
 | Repository integrity | `git fsck --no-reflogs --unreachable` | Passed after cleanup | The only stale, unreachable automation-authored local object was removed; no unreachable objects remain. |
 
 ## Feature evidence
@@ -33,7 +36,7 @@
 | API error boundary | Adversarial tests cover unknown API routes and invalid TURN HMAC configuration. | Passed locally with safe JSON 404 and direct-only 503 behavior. |
 | TURN credential boundary | Tests cover pre-view denial, short-lived configured credentials, terminal rejection, and absent-secret failure. | Passed locally; no relay was provisioned. |
 | Linux attended policy | Tests cover Wayland portal refusal without a portal, X11 selection rules, local approval guards, and static media graphs. | Passed locally; no compositor was available. |
-| Windows attended policy | Source contains a fail-closed WPF compatibility preflight only. | **Not validated:** no Windows folder or .NET desktop environment is currently connected. |
+| Windows attended policy | On the connected Windows 10 PC, the WPF host built, launched, and was exercised by an STA UI harness. It locally rejects a blank code; it refuses view/control approval when its native adapters are unavailable; view and control prompt state stays separate; active control exposes the local revoke control; and terminal reset clears session UI. | Passed for the current fail-closed shell. **Not a capture/control claim:** native Windows Graphics Capture and input adapters remain unimplemented. |
 | Final consent lifecycle in the browser | A clean local session was created, joined by a host, approved for viewing, separately approved for control, revoked back to view-only, and ended through the operator UI. | Passed locally. The browser immediately reflected every consent transition and removed the session UI after termination. |
 | Clean-state revalidation | A new portal process passed the smoke check; a new browser session completed host join, chat, view approval, control approval, control revocation, and end; the clean browser console had no unhandled application error. | Passed locally. The expected direct-only warning remained because no TURN relay is configured. |
 | Clean Linux local-display guard | A release host run with a TCP-style `DISPLAY=localhost:10`, inert credentials, and explicit local `SHARE` consent reached the media boundary and refused capture before portal access. | Passed locally with exit code 2. |
@@ -43,6 +46,7 @@
 | Additional Linux refusal paths | Release-host probes covered no interactive display, unavailable Wayland portal, TCP-style X11 display, and an unavailable local X11 display. | Passed locally. Every refusal exited with code 2 before capture, input, or normal portal activity. |
 | Clean-runnable local pass | A fresh portal completed create → host join → chat → view approval → control approval → host revoke → operator end; portal syntax, 28 regression tests, production dependency audit, health, smoke, Linux unit tests, strict lint, release build, GStreamer prerequisites, and refusal paths were re-run. | Passed locally. No new reproducible source defect or uncommitted source change was found. |
 | Master CI confirmation | GitHub Actions run `32576666460` for `3ac570925387c0f1c6602f02ce8f0854c79d1ccf` completed the portal and Linux-host jobs successfully. | Passed remotely for the current committed source. |
+| Windows-device revalidation | A dedicated Windows 10 workspace installed .NET 8, built the WPF project, ran a PortalClient lifecycle against a local portal, and ran an STA WPF consent/reset harness. The full Node portal regression suite then passed 28/28 on Windows. | Passed on the connected PC. The real host process was launched for a preflight check and then closed before rebuilds; no background host service was installed. |
 
 ## Defects found and corrected
 
@@ -66,6 +70,10 @@
 | Windows portal request failures could assume JSON and terminal cleanup had unhandled action paths. | The WPF client now has a non-JSON error fallback and the shell catches end-session failures, clears stale session state, and reports a safe status. | Source-reviewed only: .NET compilation requires the connected Windows desktop environment. |
 | Unused expired event credentials could accumulate in the portal map until a terminal session purge. | Event-credential issuance and stream validation now prune expired grants before accepting new live-event work. | `issuing a fresh event credential prunes unused expired grants`; independent probe retained one current grant after refresh. |
 | A host-initiated terminal SSE event left the browser on a stale terminal session screen with chat and end controls visible. | The browser now immediately clears terminal session state and returns home; terminal server snapshots also advertise no chat or end capability. | `terminal live-session snapshots expose no further chat or end capability` plus a live browser host-end check. |
+| The WPF host did not compile on Windows because its XAML used unsupported `LetterSpacing`, and source imports required by the native compilation target were absent. | Removed the unsupported WPF property and added explicit WPF/HTTP imports used by the application and portal client. | Connected Windows 10 PC: `dotnet build ... --configuration Release --nologo` completed without warnings; the compiled host launched. |
+| The Windows host parsed the portal’s numeric Unix-millisecond `expiresAt` response as a `DateTimeOffset`, causing live lifecycle requests to throw a JSON exception. | The Windows `SessionStatus.ExpiresAt` contract now uses `long`, matching the portal response exactly. | A Windows PortalClient harness completed join, state, view approval, control approval, revoke, and end against a local portal. |
+| `pnpm start` was POSIX-shell dependent and could not reliably launch the portal on Windows. | Replaced the shell assignment with a small cross-platform Node launcher that explicitly sets `RUN_PORTAL_SERVER`. | `pnpm start` exposed `/healthz` on a Windows 10 PC without a pre-set runtime flag and passed a Linux smoke check. |
+| The sequential WebRTC signal-limit regression could exceed its one-second window on a slower Windows runner and falsely expect HTTP 429. | The regression now sets the tested role to 79 signals within a fresh rate window, proves the 80th is accepted, then proves the 81st is rejected; per-role isolation remains covered. | `pnpm test` passed 28/28 on Windows and Linux. |
 
 ## Required real-environment validation
 
@@ -73,7 +81,7 @@ The following items are not defects in the local test results; they are **enviro
 
 | Required environment | Required verification |
 |---|---|
-| Connected Windows 10/11 development folder | Build the WPF host, run its compatibility preflight, then implement and test actual Windows Graphics Capture and separately approved input injection. |
+| Connected Windows 10/11 development folder | The WPF build, local preflight, safe consent shell, and portal lifecycle now passed on one Windows 10 PC. Implement and test actual Windows Graphics Capture and separately approved input injection next; do not claim remote desktop capture or injection before those adapters exist. |
 | GNOME or KDE Wayland session | Confirm compositor-owned ScreenCast and RemoteDesktop dialogs, picker cancellation, approval, revoke, expiry teardown, and encrypted media. |
 | Logged-in Xorg session with XTEST | Confirm inherited-display validation, capture, canonical input injection, revoke behavior, and pressed-key/button cleanup. |
 | Two real devices and a public portal | Exercise complete offer/answer/ICE exchange, view/control approval, input delivery, chat, disconnect recovery, and terminal teardown. |

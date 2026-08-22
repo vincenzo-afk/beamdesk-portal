@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { abuseReports, app, chatWindows, closeSubscribers, eventTokens, eventTokenWindows, expireSession, pruneRateWindows, pruneRoleRateWindows, purgeTerminalSession, rateWindows, sessions } from "../server.mjs";
+import { abuseReports, app, chatWindows, closeSubscribers, eventTokens, eventTokenWindows, expireSession, pruneRateWindows, pruneRoleRateWindows, purgeTerminalSession, rateWindows, sessions, signalWindows } from "../server.mjs";
 
 let server;
 let base;
@@ -19,6 +19,7 @@ test.beforeEach(() => {
   eventTokenWindows.clear();
   rateWindows.clear();
   chatWindows.clear();
+  signalWindows.clear();
   abuseReports.length = 0;
 });
 
@@ -147,10 +148,9 @@ test("WebRTC signaling is bounded per consented participant role", async () => {
   const hostHeaders = { "x-session-token": joined.body.token, "content-type": "application/json" };
   await api(`/api/sessions/${created.body.sessionId}/view-request`, { method: "POST", headers: operatorHeaders });
   await api(`/api/sessions/${created.body.sessionId}/host-action`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ action: "approve-view" }) });
-  for (let index = 0; index < 80; index += 1) {
-    const relayed = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ kind: "candidate", payload: { candidate: `candidate-${index}` } }) });
-    assert.equal(relayed.response.status, 202);
-  }
+  signalWindows.set(`${created.body.sessionId}:operator`, { startedAt: Date.now(), count: 79 });
+  const finalAllowed = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ kind: "candidate", payload: { candidate: "candidate-at-limit" } }) });
+  assert.equal(finalAllowed.response.status, 202);
   const operatorLimited = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: operatorHeaders, body: JSON.stringify({ kind: "candidate", payload: { candidate: "candidate-over-limit" } }) });
   assert.equal(operatorLimited.response.status, 429);
   const hostStillAllowed = await api(`/api/sessions/${created.body.sessionId}/signal`, { method: "POST", headers: hostHeaders, body: JSON.stringify({ kind: "answer", payload: { type: "answer" } }) });

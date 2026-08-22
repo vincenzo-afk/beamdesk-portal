@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -65,4 +66,4 @@ public sealed class PortalRequestException(int statusCode, string message) : Inv
 }
 
 public sealed record JoinedSession(string SessionId, string Token);
-public sealed record SessionStatus(string State, DateTimeOffset ExpiresAt);
+public sealed record SessionStatus(string State, long ExpiresAt);

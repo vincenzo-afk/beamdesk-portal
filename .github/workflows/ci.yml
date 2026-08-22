@@ -70,3 +70,45 @@ jobs:
       - name: Build Linux host release artifact
         working-directory: linux-host-agent
         run: cargo build --release
+
+  windows-host:
+    name: Windows host build and portal smoke check
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install portal dependencies
+        shell: pwsh
+        run: corepack enable; pnpm install --frozen-lockfile
+      - name: Start portal with the package command and run smoke check
+        shell: pwsh
+        run: |
+          $portal = Start-Process -FilePath pnpm.cmd -ArgumentList 'start' -PassThru -RedirectStandardOutput portal.log -RedirectStandardError portal.error.log
+          try {
+            $healthy = $false
+            for ($attempt = 1; $attempt -le 15; $attempt += 1) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:4173/healthz' -TimeoutSec 2
+                if ($health.status -eq 'ok') { $healthy = $true; break }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $healthy) {
+              Get-Content portal.log -ErrorAction SilentlyContinue
+              Get-Content portal.error.log -ErrorAction SilentlyContinue
+              throw 'BeamDesk portal did not become healthy on Windows.'
+            }
+            $env:BEAMDESK_SMOKE_URL = 'http://127.0.0.1:4173/'
+            pnpm smoke
+          } finally {
+            if (-not $portal.HasExited) { Stop-Process -Id $portal.Id -Force }
+          }
+      - name: Build Windows host release artifact
+        run: dotnet build windows-host-agent/BeamDesk.HostAgent/BeamDesk.HostAgent.csproj --configuration Release --nologo

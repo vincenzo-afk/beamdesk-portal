@@ -5,8 +5,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "RUN_PORTAL_SERVER=true node server.mjs",
-    "start": "RUN_PORTAL_SERVER=true node server.mjs",
+    "dev": "node scripts/start.mjs",
+    "start": "node scripts/start.mjs",
     "test": "node --test",
     "smoke": "node scripts/smoke.mjs"
   },

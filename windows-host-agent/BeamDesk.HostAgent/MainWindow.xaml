@@ -7,7 +7,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Text="BEAMDESK" Foreground="{StaticResource Accent}" FontWeight="Bold" FontSize="12" LetterSpacing="2" />
+      <TextBlock Text="BEAMDESK" Foreground="{StaticResource Accent}" FontWeight="Bold" FontSize="12" />
       <TextBlock Text="Windows support needs your approval." FontSize="28" FontWeight="Bold" Margin="0,9,0,6" TextWrapping="Wrap" />
       <TextBlock Text="Enter the code shared by the support person. No screen is shared and no remote input is accepted until you approve a local request below." Foreground="#B9CBD9" TextWrapping="Wrap" />
     </StackPanel>
