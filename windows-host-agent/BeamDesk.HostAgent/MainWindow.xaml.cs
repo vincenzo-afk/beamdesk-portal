@@ -111,6 +111,10 @@ public partial class MainWindow : Window
             return;
         }
         try { ApplyState(await _portal.HostActionAsync(_session, action)); }
+        catch (PortalRequestException ex) when (ex.StatusCode is 404 or 410)
+        {
+            ResetSessionUi("Session unavailable", "The attended support session ended or expired. No sharing or remote control is active.");
+        }
         catch (Exception ex) { SetStatus("Action could not be completed", ex.Message); }
     }
 
